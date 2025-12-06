@@ -1,5 +1,6 @@
+
 import { initializeApp } from "firebase/app";
-import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut } from "firebase/auth";
+import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, sendPasswordResetEmail, updatePassword } from "firebase/auth";
 import { 
   getFirestore, 
   collection, 
@@ -142,6 +143,35 @@ class SQLiteSimulator {
         let users = this.getTable('table_users');
         users = users.filter((u: any) => u.id.toString() !== userId);
         this.saveTable('table_users', users);
+    }
+    
+    // Master Reset Function for Local Mode
+    reset_admin_password_with_key(key: string): boolean {
+        // The Master Key is hardcoded here.
+        const MASTER_KEY = "RGcreation"; 
+        
+        if (key === MASTER_KEY) {
+            const users = this.getTable('table_users');
+            const adminIndex = users.findIndex((u: any) => u.role === 'ADMIN');
+            
+            if (adminIndex >= 0) {
+                users[adminIndex].password = "1234"; // Default Reset Password
+                this.saveTable('table_users', users);
+                return true;
+            }
+        }
+        return false;
+    }
+
+    update_user_password(userId: string, newPassword: string): boolean {
+        const users = this.getTable('table_users');
+        const index = users.findIndex((u: any) => u.id.toString() === userId);
+        if (index >= 0) {
+            users[index].password = newPassword;
+            this.saveTable('table_users', users);
+            return true;
+        }
+        return false;
     }
 
     // 3. FUNCTIONS FOR PRODUCTS (Ported from Python)
@@ -324,6 +354,46 @@ const database = {
       // Use SQLite Logic
       return sqlite.register_user(user.username, password);
     }
+  },
+  
+  async resetAdminPassword(keyOrEmail: string): Promise<{success: boolean, message: string}> {
+      if (isCloud) {
+          try {
+              if (!keyOrEmail.includes('@')) return { success: false, message: "Please enter a valid email address." };
+              await sendPasswordResetEmail(auth, keyOrEmail);
+              return { success: true, message: "Password reset email sent!" };
+          } catch (e: any) {
+              return { success: false, message: e.message || "Failed to send reset email." };
+          }
+      } else {
+          // Local Mode: Use Master Key
+          const success = sqlite.reset_admin_password_with_key(keyOrEmail);
+          if (success) {
+              return { success: true, message: "Admin Password Reset to '1234'" };
+          } else {
+              return { success: false, message: "Invalid Master Recovery Key." };
+          }
+      }
+  },
+
+  async changePassword(newPassword: string): Promise<{success: boolean, message: string}> {
+      if (isCloud) {
+        try {
+          if (!auth.currentUser) return { success: false, message: "No user logged in." };
+          await updatePassword(auth.currentUser, newPassword);
+          return { success: true, message: "Password updated successfully." };
+        } catch (error: any) {
+          return { success: false, message: error.message || "Failed to update password. You may need to re-login." };
+        }
+      } else {
+        const currentUserStr = localStorage.getItem('rg_current_user');
+        if (currentUserStr) {
+            const u = JSON.parse(currentUserStr);
+            const success = sqlite.update_user_password(u.id, newPassword);
+            return success ? { success: true, message: "Password updated successfully." } : { success: false, message: "User not found." };
+        }
+        return { success: false, message: "No active user session found." };
+      }
   },
   
   async logout() {

@@ -7,15 +7,17 @@ import database from '../services/database';
 const AdminIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" /></svg>;
 const EmployeeIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" /></svg>;
 const BackIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M9.707 16.707a1 1 0 01-1.414 0l-6-6a1 1 0 010-1.414l6-6a1 1 0 011.414 1.414L5.414 9H17a1 1 0 110 2H5.414l4.293 4.293a1 1 0 010 1.414z" clipRule="evenodd" /></svg>;
+const KeyIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M18 8a6 6 0 01-7.743 5.743L10 14l-1 1-1 1H6v2H2v-4l4.257-4.257A6 6 0 1118 8zm-6-4a1 1 0 100 2 2 2 0 000-2z" clipRule="evenodd" /></svg>;
 
 const LoginPage: React.FC = () => {
   const { setCurrentUser, showToast, setIsLoading } = useAppContext();
   
-  // States: 'checking' -> 'create_admin' OR 'selection' -> 'login_admin'/'login_employee'
-  const [view, setView] = useState<'checking' | 'create_admin' | 'selection' | 'login_admin' | 'login_employee'>('checking');
+  // States: 'checking' -> 'create_admin' OR 'selection' -> 'login_admin'/'login_employee' -> 'forgot_password'
+  const [view, setView] = useState<'checking' | 'create_admin' | 'selection' | 'login_admin' | 'login_employee' | 'forgot_password'>('checking');
   
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [recoveryKey, setRecoveryKey] = useState('');
   const [error, setError] = useState('');
   const [isShaking, setIsShaking] = useState(false);
 
@@ -100,11 +102,27 @@ const LoginPage: React.FC = () => {
         triggerError("Username and password cannot be empty.");
     }
   };
+  
+  const handleRecovery = async (e: React.FormEvent) => {
+      e.preventDefault();
+      setIsLoading(true);
+      const res = await database.resetAdminPassword(recoveryKey);
+      setIsLoading(false);
+      
+      if (res.success) {
+          showToast(res.message, 'success');
+          setView('login_admin');
+          setRecoveryKey('');
+      } else {
+          triggerError(res.message);
+      }
+  };
 
   const handleBackToSelection = () => {
       setError('');
       setUsername('');
       setPassword('');
+      setRecoveryKey('');
       setView('selection');
   };
 
@@ -163,6 +181,52 @@ const LoginPage: React.FC = () => {
           </div>
       </div>
   );
+  
+  const renderForgotPassword = () => (
+       <div className="animate-fade-in-down w-full max-w-md bg-surface p-8 rounded-lg shadow-2xl relative">
+            <button 
+                onClick={() => setView('login_admin')} 
+                className="absolute top-4 left-4 text-on-surface/60 hover:text-primary transition-colors flex items-center text-sm font-medium"
+            >
+                <BackIcon /> Back
+            </button>
+            
+            <div className="text-center mb-6 mt-4">
+                <div className="w-16 h-16 mx-auto rounded-full bg-red-100 text-red-500 flex items-center justify-center mb-4">
+                    <KeyIcon />
+                </div>
+                <h2 className="text-2xl font-bold text-on-surface">Recover Admin</h2>
+                <p className="text-sm text-on-surface/60 mt-2">
+                    {database.isCloud 
+                        ? "Enter your email address to receive a password reset link." 
+                        : "Enter the Master Recovery Key provided by your software vendor."}
+                </p>
+            </div>
+            
+            <form onSubmit={handleRecovery} className="space-y-6">
+                <div>
+                     <label className="block text-sm font-medium text-on-surface">
+                         {database.isCloud ? "Registered Email" : "Master Recovery Key"}
+                     </label>
+                     <input 
+                        type="text" 
+                        value={recoveryKey} 
+                        onChange={e => setRecoveryKey(e.target.value)} 
+                        className="w-full p-3 mt-1 bg-background border border-on-surface/20 rounded-md focus:ring-2 focus:ring-red-500 focus:border-red-500 text-on-surface transition-all duration-300" 
+                        placeholder={database.isCloud ? "admin@example.com" : "e.g. RG-XXXX-XXXX"}
+                        autoFocus
+                    />
+                </div>
+                {error && <p className={`text-red-500 text-sm text-center ${isShaking ? 'animate-shake' : ''}`}>{error}</p>}
+                <button 
+                    type="submit" 
+                    className="w-full py-3 px-4 bg-red-500 hover:bg-red-600 text-white font-semibold rounded-md transition-colors duration-300 shadow-md"
+                >
+                    {database.isCloud ? "Send Reset Email" : "Reset Password"}
+                </button>
+            </form>
+       </div>
+  );
 
   const renderLoginForm = () => {
       const isAdmin = view === 'login_admin';
@@ -206,6 +270,15 @@ const LoginPage: React.FC = () => {
                     />
                 </div>
                 {error && <p className={`text-red-500 dark:text-red-400 text-sm text-center ${isShaking ? 'animate-shake' : ''}`}>{error}</p>}
+                
+                {isAdmin && (
+                    <div className="text-right">
+                        <button type="button" onClick={() => setView('forgot_password')} className="text-xs text-primary hover:underline">
+                            Forgot Password?
+                        </button>
+                    </div>
+                )}
+                
                 <button 
                     type="submit" 
                     className={`w-full py-3 px-4 text-on-primary font-semibold rounded-md transition-colors duration-300 shadow-md ${isAdmin ? 'bg-primary hover:bg-indigo-600' : 'bg-secondary hover:bg-green-600'}`}
@@ -238,6 +311,7 @@ const LoginPage: React.FC = () => {
         {view === 'create_admin' && renderCreateAdminForm()}
         {view === 'selection' && renderPortalSelection()}
         {(view === 'login_admin' || view === 'login_employee') && renderLoginForm()}
+        {view === 'forgot_password' && renderForgotPassword()}
 
         {/* Footer */}
         {!database.isCloud && view !== 'checking' && (

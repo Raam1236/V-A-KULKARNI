@@ -9,6 +9,9 @@ const ShopSettings: React.FC = () => {
     const [details, setDetails] = useState<ShopDetails>(shopDetails);
     const [bankDetails, setBankDetails] = useState(shopDetails.bankDetails || { accountName: '', accountNumber: '', bankName: '', ifscCode: '' });
     const fileInputRef = useRef<HTMLInputElement>(null);
+    
+    // Admin Password Change State
+    const [passwordData, setPasswordData] = useState({ newPassword: '', confirmPassword: '' });
 
     useEffect(() => {
         setDetails(shopDetails);
@@ -29,6 +32,26 @@ const ShopSettings: React.FC = () => {
         const updatedDetails = { ...details, bankDetails };
         updateShopDetails(updatedDetails);
         showToast('Shop details updated successfully!');
+    };
+    
+    const handlePasswordChange = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (passwordData.newPassword.length < 4) {
+             showToast("Password must be at least 4 characters.", "error");
+             return;
+        }
+        if (passwordData.newPassword !== passwordData.confirmPassword) {
+            showToast("Passwords do not match.", "error");
+            return;
+        }
+        
+        const result = await database.changePassword(passwordData.newPassword);
+        if (result.success) {
+            showToast(result.message, "success");
+            setPasswordData({ newPassword: '', confirmPassword: '' });
+        } else {
+            showToast(result.message, "error");
+        }
     };
 
     const handleBackup = async () => {
@@ -174,6 +197,39 @@ const ShopSettings: React.FC = () => {
                     </button>
                 </div>
             </form>
+            
+            {/* Admin Security Section */}
+            <div className="mt-8 bg-surface p-8 rounded-lg shadow-md border-l-4 border-red-500">
+                 <h2 className="text-xl font-semibold text-on-surface mb-6 border-b border-on-surface/20 pb-2">Admin Account Security</h2>
+                 <form onSubmit={handlePasswordChange} className="grid grid-cols-1 md:grid-cols-3 gap-6 items-end">
+                    <div>
+                        <label className="block text-sm font-medium text-on-surface mb-1">New Password</label>
+                        <input 
+                            type="password" 
+                            value={passwordData.newPassword} 
+                            onChange={e => setPasswordData({...passwordData, newPassword: e.target.value})}
+                            className="w-full p-3 bg-background border border-on-surface/20 rounded-md text-on-surface"
+                            placeholder="Enter new password"
+                        />
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-on-surface mb-1">Confirm Password</label>
+                         <input 
+                            type="password" 
+                            value={passwordData.confirmPassword} 
+                            onChange={e => setPasswordData({...passwordData, confirmPassword: e.target.value})}
+                            className="w-full p-3 bg-background border border-on-surface/20 rounded-md text-on-surface"
+                            placeholder="Confirm new password"
+                        />
+                    </div>
+                    <button type="submit" className="py-3 px-6 bg-red-600 text-white font-bold rounded-md hover:bg-red-700 transition shadow-md">
+                        Update Password
+                    </button>
+                 </form>
+                 <p className="text-xs text-on-surface/60 mt-2">
+                    Note: In Cloud Mode, changing password may require a recent login. If it fails, please logout and login again.
+                 </p>
+            </div>
 
             {/* Database Management */}
             <div className="mt-8 bg-surface p-8 rounded-lg shadow-md">
