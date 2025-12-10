@@ -322,6 +322,13 @@ const App: React.FC = () => {
     }
     return <LoginPage />;
   };
+  
+  const getStatusText = () => {
+      if (database.isCloud) return { text: "● CLOUD CONNECTED", color: "text-green-400" };
+      return { text: "● LOCAL MODE", color: "text-yellow-400" };
+  };
+
+  const status = getStatusText();
 
   // --- EXPIRED SCREEN ---
   if (trialStatus === 'expired') {
@@ -345,7 +352,7 @@ const App: React.FC = () => {
                       <p className="text-lg text-gray-700">Please purchase a full license.</p>
                       <div className="mt-4 pt-4 border-t border-gray-200">
                            <p className="text-sm font-semibold text-gray-500">Administrator Contact</p>
-                           <p className="text-2xl font-bold text-blue-600 mt-1">98765 43210</p>
+                           <p className="text-2xl font-bold text-blue-600 mt-1">6361380854</p>
                       </div>
                   </div>
                   
@@ -390,8 +397,8 @@ const App: React.FC = () => {
         {/* Status Bar */}
         <div className="h-6 w-full bg-gray-900 text-white flex justify-between items-center px-4 text-xs font-mono">
             <div className="flex items-center gap-4">
-                <span className={database.isCloud ? "text-green-400 font-bold" : "text-yellow-400 font-bold"}>
-                    {database.isCloud ? "● CLOUD CONNECTED" : "● LOCAL MODE"}
+                <span className={`${status.color} font-bold truncate max-w-[200px]`}>
+                    {status.text}
                 </span>
             </div>
             {/* Trial Counter */}

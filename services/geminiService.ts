@@ -1,3 +1,4 @@
+
 import { GoogleGenAI, Type } from "@google/genai";
 import { Product, Sale, Customer } from '../types';
 
@@ -28,9 +29,13 @@ const parseAIResponse = (text: string) => {
 export const fetchMarketNews = async (): Promise<string> => {
   try {
     const ai = getGenAI();
+    // Use Google Search tool for real news
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash',
-      contents: "Generate a one-sentence fictional news headline about today's grocery market trends. For example: 'Unexpected frost hits citrus groves, potentially driving up orange prices.'",
+      contents: "Find the single most important latest news headline related to grocery retail, food prices (vegetables, oil, grains), or FMCG market in India today. Return ONLY the headline text.",
+      config: {
+        tools: [{ googleSearch: {} }],
+      },
     });
     return response.text || "Market news currently unavailable.";
   } catch (error) {
@@ -42,14 +47,35 @@ export const fetchMarketNews = async (): Promise<string> => {
 export const fetchPriceVariationSuggestion = async (): Promise<string> => {
   try {
     const ai = getGenAI();
+    // Use Google Search for real price trends
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash',
-      contents: "Generate a short, fictional market news update for retail grocery products. Mention a potential price increase or decrease for a common product category due to supply chain issues, new taxes, or a good harvest. Format the response as a simple sentence. Then on a new line, suggest a specific percentage change. Example: 'Global coffee bean shortage worsens, impacting roasters worldwide.\nSUGGESTION: Increase Coffee product prices by 8%'",
+      contents: "Search for the latest price trends of essential grocery commodities (like vegetables, onions, tomatoes, oils, sugar, grains) in India. Identify one significant price change (increase or decrease). Summarize the news in one sentence. Then, on a new line starting with 'SUGGESTION:', suggest a percentage price change for that specific product category. Example output: 'Onion prices have surged by 20% due to supply shortage.\nSUGGESTION: Increase Vegetables product prices by 10%'",
+      config: {
+        tools: [{ googleSearch: {} }],
+      },
     });
     return response.text || "Could not fetch suggestion.";
   } catch (error) {
     console.error("Error fetching price variation:", error);
     return "Could not fetch price variation suggestion.";
+  }
+};
+
+export const fetchRetailNewsInsights = async (): Promise<string> => {
+  try {
+    const ai = getGenAI();
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: "Find 3 top trending news stories, government policy changes, or market shifts affecting the grocery and retail business in India right now. Return the result as a concise markdown bulleted list.",
+      config: {
+        tools: [{ googleSearch: {} }],
+      },
+    });
+    return response.text || "No trending news found.";
+  } catch (error) {
+    console.error("News error:", error);
+    return "Unable to fetch news trends.";
   }
 };
 

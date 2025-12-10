@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { useAppContext } from '../hooks/useAppContext';
 import { User, Role } from '../types';
@@ -152,9 +153,9 @@ const LoginPage: React.FC = () => {
   );
 
   const renderPortalSelection = () => (
-      <div className="animate-fade-in-down w-full max-w-2xl">
+      <div className="animate-fade-in-down w-full max-w-4xl">
           <h2 className="text-3xl font-bold text-center text-on-surface mb-8">Select Login Portal</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-2xl mx-auto">
               {/* Admin Card */}
               <button 
                 onClick={() => setView('login_admin')}

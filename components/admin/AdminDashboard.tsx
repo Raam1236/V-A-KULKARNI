@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { useAppContext } from '../../hooks/useAppContext';
 import Analytics from './Analytics';
@@ -9,8 +10,9 @@ import PriceVariator from './PriceVariator';
 import AIAssistant from './AIAssistant';
 import QRGenerator from './QRGenerator';
 import SmartInsights from './SmartInsights';
+import CertificateGenerator from './CertificateGenerator';
 
-type Tab = 'analytics' | 'insights' | 'products' | 'employees' | 'customers' | 'settings' | 'price-variator' | 'qr-generator';
+type Tab = 'analytics' | 'insights' | 'products' | 'employees' | 'customers' | 'settings' | 'price-variator' | 'qr-generator' | 'certificates';
 
 const AdminDashboard: React.FC = () => {
   const { currentUser, logout, shopDetails, products, sales, customers, theme, setTheme } = useAppContext();
@@ -29,6 +31,7 @@ const AdminDashboard: React.FC = () => {
     { id: 'customers', label: 'Customers', icon: <IdentificationIcon /> },
     { id: 'price-variator', label: 'Market AI', icon: <SparklesIcon /> },
     { id: 'qr-generator', label: 'Barcode Generator', icon: <BarcodeIcon /> },
+    { id: 'certificates', label: 'Certificates', icon: <BadgeCheckIcon /> },
     { id: 'settings', label: 'Shop Settings', icon: <CogIcon /> },
   ];
 
@@ -42,6 +45,7 @@ const AdminDashboard: React.FC = () => {
       case 'settings': return <ShopSettings />;
       case 'price-variator': return <PriceVariator />;
       case 'qr-generator': return <QRGenerator />;
+      case 'certificates': return <CertificateGenerator />;
       default: return <Analytics />;
     }
   };
@@ -136,5 +140,6 @@ const SunIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6
 const MoonIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" /></svg>;
 const BarcodeIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="currentColor" viewBox="0 0 24 24"><path d="M2 6h2v12H2V6zm3 0h1v12H5V6zm2 0h2v12H7V6zm3 0h1v12h-1V6zm2 0h3v12h-3V6zm4 0h2v12h-2V6zm3 0h1v12h-1V6z"/></svg>;
 const LightningIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>;
+const BadgeCheckIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" /></svg>;
 
 export default AdminDashboard;

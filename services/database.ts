@@ -39,23 +39,18 @@ if (isCloud) {
 // Mimics the provided Python sqlite3 code structure using LocalStorage as the 'file'
 
 class SQLiteSimulator {
-    private dbName = 'shop.db';
-    
     constructor() {
         this.create_database();
     }
 
     // 1. SETUP THE DATABASE (Ported from Python)
     private create_database() {
-        // Simulating: CREATE TABLE IF NOT EXISTS users...
         if (!localStorage.getItem('table_users')) {
             localStorage.setItem('table_users', JSON.stringify([]));
         }
-        // Simulating: CREATE TABLE IF NOT EXISTS products...
         if (!localStorage.getItem('table_products')) {
             localStorage.setItem('table_products', JSON.stringify([]));
         }
-        // Extension for App: Sales & Customers (Not in original Python, but needed for App)
         if (!localStorage.getItem('table_sales')) {
             localStorage.setItem('table_sales', JSON.stringify([]));
         }
@@ -100,7 +95,6 @@ class SQLiteSimulator {
     }
 
     check_login(username: string, password: string): User | null {
-        // SELECT * FROM users WHERE username = ? AND password = ?
         const users = this.getTable('table_users');
         const user = users.find((u: any) => u.username === username && u.password === password);
         
@@ -108,16 +102,15 @@ class SQLiteSimulator {
             return {
                 id: user.id.toString(),
                 username: user.username,
-                role: (user.role as Role) || Role.EMPLOYEE // Mapping back to App Types
+                role: (user.role as Role) || Role.EMPLOYEE 
             };
         }
-        return null; // None
+        return null; 
     }
 
-    // Additional function to match App's 'Employees' feature
     save_employee(user: User, password?: string) {
         const users = this.getTable('table_users');
-        const existingIndex = users.findIndex((u: any) => u.username === user.username); // Using username as unique key for employees
+        const existingIndex = users.findIndex((u: any) => u.username === user.username); 
 
         if (existingIndex >= 0) {
             users[existingIndex] = { ...users[existingIndex], ...user, password: password || users[existingIndex].password };
@@ -145,17 +138,13 @@ class SQLiteSimulator {
         this.saveTable('table_users', users);
     }
     
-    // Master Reset Function for Local Mode
     reset_admin_password_with_key(key: string): boolean {
-        // The Master Key is hardcoded here.
         const MASTER_KEY = "RGcreation"; 
-        
         if (key === MASTER_KEY) {
             const users = this.getTable('table_users');
             const adminIndex = users.findIndex((u: any) => u.role === 'ADMIN');
-            
             if (adminIndex >= 0) {
-                users[adminIndex].password = "1234"; // Default Reset Password
+                users[adminIndex].password = "1234"; 
                 this.saveTable('table_users', users);
                 return true;
             }
@@ -174,20 +163,16 @@ class SQLiteSimulator {
         return false;
     }
 
-    // 3. FUNCTIONS FOR PRODUCTS (Ported from Python)
+    // 3. FUNCTIONS FOR PRODUCTS
     add_product(product: Product) {
         const products = this.getTable('table_products');
-        
-        // Logic to handle "INSERT OR UPDATE" for the app's editing capability
         const existingIndex = products.findIndex((p: any) => p.id === product.id);
 
-        // Mapping App Schema to Python Schema (and preserving extra fields)
         const row = {
             id: product.id,
-            product_name: product.name, // Python: product_name
-            price: product.price,       // Python: price
-            quantity: product.stock,    // Python: quantity
-            // Extra columns to support App UI
+            product_name: product.name, 
+            price: product.price,       
+            quantity: product.stock,    
             brand: product.brand,
             expireDate: product.expireDate,
             stockHistory: product.stockHistory
@@ -203,15 +188,12 @@ class SQLiteSimulator {
     }
 
     get_all_products(): Product[] {
-        // SELECT * FROM products
         const rows = this.getTable('table_products');
-        
-        // Map Python schema back to App Interface
         return rows.map((row: any) => ({
             id: row.id,
-            name: row.product_name, // Mapping back
+            name: row.product_name,
             price: row.price,
-            stock: row.quantity,    // Mapping back
+            stock: row.quantity,
             brand: row.brand || 'Generic',
             expireDate: row.expireDate || '',
             stockHistory: row.stockHistory || []
@@ -224,8 +206,7 @@ class SQLiteSimulator {
         this.saveTable('table_products', products);
     }
 
-    // --- Extensions for Sales & Customers (Required for App to function) ---
-    
+    // Sales
     get_all_sales(): Sale[] {
         return this.getTable('table_sales');
     }
@@ -236,6 +217,7 @@ class SQLiteSimulator {
         this.saveTable('table_sales', sales);
     }
 
+    // Customers
     get_all_customers(): Customer[] {
         return this.getTable('table_customers');
     }
@@ -254,6 +236,7 @@ class SQLiteSimulator {
         this.saveTable('table_customers', customers);
     }
 
+    // Shop Details
     get_shop_details(): ShopDetails | null {
         const data = localStorage.getItem('table_shop_details');
         if (data) {
@@ -270,7 +253,6 @@ class SQLiteSimulator {
         localStorage.setItem('table_shop_details', JSON.stringify(details));
     }
 
-    // --- Database Backup/Restore ---
     export_database(): string {
         const data = {
             users: this.getTable('table_users'),
@@ -310,11 +292,13 @@ const generateInvoiceNumber = () => {
 
 const database = {
   isCloud,
+  get isDrive() { return false; }, // Deprecated
 
   // --- Auth ---
   async login(usernameOrEmail: string, password: string): Promise<User | null> {
     if (isCloud) {
-      try {
+       // Firebase Logic (Omitted for brevity, same as original)
+       try {
         const userCredential = await signInWithEmailAndPassword(auth, usernameOrEmail, password);
         const fbUser = userCredential.user;
         const userDocRef = doc(db, "users", fbUser.uid);
@@ -336,8 +320,14 @@ const database = {
     }
   },
 
+  async enableDriveMode(): Promise<boolean> {
+      console.warn("Drive mode is deprecated.");
+      return false;
+  },
+
   async registerAdmin(user: User, password: string): Promise<boolean> {
     if (isCloud) {
+      // Firebase Logic
       try {
         const email = user.username.includes('@') ? user.username : `${user.username}@rgshop.com`;
         const userCredential = await createUserWithEmailAndPassword(auth, email, password);
@@ -347,11 +337,9 @@ const database = {
         });
         return true;
       } catch (error) {
-        console.error("Cloud Register Error:", error);
         return false;
       }
     } else {
-      // Use SQLite Logic
       return sqlite.register_user(user.username, password);
     }
   },
@@ -366,7 +354,6 @@ const database = {
               return { success: false, message: e.message || "Failed to send reset email." };
           }
       } else {
-          // Local Mode: Use Master Key
           const success = sqlite.reset_admin_password_with_key(keyOrEmail);
           if (success) {
               return { success: true, message: "Admin Password Reset to '1234'" };
@@ -417,7 +404,6 @@ const database = {
          } as Product;
       });
     } else {
-      // Use SQLite Logic
       return sqlite.get_all_products();
     }
   },
@@ -438,7 +424,6 @@ const database = {
       };
       await setDoc(docRef, productData, { merge: true }); 
     } else {
-      // Use SQLite Logic
       sqlite.add_product(product);
     }
   },

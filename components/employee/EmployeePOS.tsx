@@ -251,7 +251,11 @@ const EmployeePOS: React.FC = () => {
     const [selectedResultIndex, setSelectedResultIndex] = useState(0);
     const [showLiveMonitor, setShowLiveMonitor] = useState(false);
     const [showVisualScanner, setShowVisualScanner] = useState(false);
+    
+    // Voice Command State & Ref
     const [isVoiceListening, setIsVoiceListening] = useState(false);
+    const recognitionRef = useRef<any>(null); // Store recognition instance
+
     const [upsellSuggestion, setUpsellSuggestion] = useState<string | null>(null);
     const [isProcessingVoice, setIsProcessingVoice] = useState(false);
     
@@ -259,7 +263,13 @@ const EmployeePOS: React.FC = () => {
 
     useEffect(() => {
         audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
-        return () => { audioContextRef.current?.close(); }
+        // Cleanup recognition on unmount
+        return () => { 
+            audioContextRef.current?.close(); 
+            if (recognitionRef.current) {
+                recognitionRef.current.abort();
+            }
+        };
     }, []);
 
     useEffect(() => {
@@ -316,7 +326,7 @@ const EmployeePOS: React.FC = () => {
         };
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [searchTerm, selectedResultIndex, filteredProducts, isScannerOpen, currentBill, paymentModalOpen]);
+    }, [searchTerm, selectedResultIndex, filteredProducts, isScannerOpen, currentBill, paymentModalOpen]); // Removed isVoiceListening dep to prevent loop, logic handles it
 
     // Upsell Logic
     useEffect(() => {
@@ -473,36 +483,87 @@ const EmployeePOS: React.FC = () => {
         }
     };
 
-    const toggleVoiceListening = () => {
+    // Refactored Robust Voice Command Logic
+    const toggleVoiceListening = useCallback(() => {
+        // If already listening, stop it manually
         if (isVoiceListening) {
+            if (recognitionRef.current) {
+                recognitionRef.current.stop();
+            }
             setIsVoiceListening(false);
             return;
         }
+
         if (!('webkitSpeechRecognition' in window)) {
-            showToast("Voice not supported", "error");
+            showToast("Voice not supported in this browser", "error");
             return;
         }
-        const recognition = new (window as any).webkitSpeechRecognition();
-        recognition.continuous = false;
-        recognition.lang = 'en-US';
-        recognition.onstart = () => { setIsVoiceListening(true); showToast("Listening..."); };
-        recognition.onend = () => setIsVoiceListening(false);
-        recognition.onresult = async (event: any) => {
-            const transcript = event.results[0][0].transcript;
-            showToast(`Cmd: "${transcript}"`);
-            setIsProcessingVoice(true);
-            const result = await processVoiceCommand(transcript, products);
-            setIsProcessingVoice(false);
-            if (result) {
-                if (result.type === 'ADD_ITEM' && result.productId) {
-                    const product = products.find(p => p.id === result.productId);
-                    if (product) addToBill(product, result.quantity || 1);
-                } else if (result.type === 'CHECKOUT') handleCheckout();
-                else if (result.type === 'CLEAR_BILL') handleClearBill();
-            }
-        };
-        recognition.start();
-    };
+
+        try {
+            // Create new instance
+            const SpeechRecognition = (window as any).webkitSpeechRecognition;
+            const recognition = new SpeechRecognition();
+            recognitionRef.current = recognition;
+
+            recognition.continuous = false; // Stop after one sentence
+            recognition.lang = 'en-US';
+            recognition.interimResults = false;
+            recognition.maxAlternatives = 1;
+
+            recognition.onstart = () => {
+                setIsVoiceListening(true);
+                showToast("🎤 Listening... Speak now");
+            };
+
+            recognition.onend = () => {
+                // Ensure state sync when it stops automatically
+                setIsVoiceListening(false);
+            };
+
+            recognition.onerror = (event: any) => {
+                console.error("Voice Recognition Error", event.error);
+                setIsVoiceListening(false);
+                if (event.error === 'not-allowed') {
+                    showToast("Microphone access denied", "error");
+                } else if (event.error === 'no-speech') {
+                    showToast("No speech detected", "error");
+                } else {
+                    showToast(`Voice Error: ${event.error}`, "error");
+                }
+            };
+
+            recognition.onresult = async (event: any) => {
+                const transcript = event.results[0][0].transcript;
+                showToast(`Cmd: "${transcript}"`);
+                setIsProcessingVoice(true);
+                
+                try {
+                    const result = await processVoiceCommand(transcript, products);
+                    if (result) {
+                        if (result.type === 'ADD_ITEM' && result.productId) {
+                            const product = products.find(p => p.id === result.productId);
+                            if (product) addToBill(product, result.quantity || 1);
+                        } else if (result.type === 'CHECKOUT') {
+                            handleCheckout();
+                        } else if (result.type === 'CLEAR_BILL') {
+                            handleClearBill();
+                        }
+                    }
+                } catch (e) {
+                    console.error("Voice Processing Error", e);
+                } finally {
+                    setIsProcessingVoice(false);
+                }
+            };
+
+            recognition.start();
+
+        } catch (e) {
+            console.error("Failed to start recognition", e);
+            setIsVoiceListening(false);
+            showToast("Failed to start voice. Try again.", "error");
+        }
+    }, [isVoiceListening, products, currentBill]); // Dependencies for callback
 
     const handleCheckout = () => {
         if (currentBill.items.length === 0) {
