@@ -12,9 +12,10 @@ import {
   query, 
   where, 
   serverTimestamp, 
-  Timestamp 
+  Timestamp,
+  onSnapshot
 } from "firebase/firestore";
-import { firebaseConfig, isFirebaseConfigured } from "./firebaseConfig";
+import { firebaseConfig, isFirebaseConfigured, saveERPConfig, disconnectERP } from "./firebaseConfig";
 import { Product, Sale, Customer, User, Role, ShopDetails } from "../types";
 
 // --- Configuration ---
@@ -26,70 +27,45 @@ let db: any = null;
 
 if (isCloud) {
   try {
+    // console.log("Initializing ERP Connection...", firebaseConfig);
     const app = initializeApp(firebaseConfig);
     auth = getAuth(app);
     db = getFirestore(app);
-    console.log("Firebase Connected");
+    console.log("✅ ERP System Connected");
   } catch (error) {
-    console.error("Firebase Initialization Error:", error);
+    console.error("ERP Connection Failed:", error);
+    // Fallback to local if cloud fails (optional, but good for stability)
   }
 }
 
 // --- SQLite Simulation (Local Mode) ---
-// Mimics the provided Python sqlite3 code structure using LocalStorage as the 'file'
-
 class SQLiteSimulator {
     constructor() {
         this.create_database();
     }
 
-    // 1. SETUP THE DATABASE (Ported from Python)
     private create_database() {
-        if (!localStorage.getItem('table_users')) {
-            localStorage.setItem('table_users', JSON.stringify([]));
-        }
-        if (!localStorage.getItem('table_products')) {
-            localStorage.setItem('table_products', JSON.stringify([]));
-        }
-        if (!localStorage.getItem('table_sales')) {
-            localStorage.setItem('table_sales', JSON.stringify([]));
-        }
-        if (!localStorage.getItem('table_customers')) {
-            localStorage.setItem('table_customers', JSON.stringify([]));
-        }
-        if (!localStorage.getItem('table_shop_details')) {
-            localStorage.setItem('table_shop_details', JSON.stringify(null));
-        }
+        if (!localStorage.getItem('table_users')) localStorage.setItem('table_users', JSON.stringify([]));
+        if (!localStorage.getItem('table_products')) localStorage.setItem('table_products', JSON.stringify([]));
+        if (!localStorage.getItem('table_sales')) localStorage.setItem('table_sales', JSON.stringify([]));
+        if (!localStorage.getItem('table_customers')) localStorage.setItem('table_customers', JSON.stringify([]));
+        if (!localStorage.getItem('table_shop_details')) localStorage.setItem('table_shop_details', JSON.stringify(null));
     }
 
-    // Helper to get table data
     private getTable(tableName: string): any[] {
         const data = localStorage.getItem(tableName);
         return data ? JSON.parse(data) : [];
     }
 
-    // Helper to save table data
     private saveTable(tableName: string, data: any[]) {
         localStorage.setItem(tableName, JSON.stringify(data));
     }
 
-    // 2. FUNCTIONS FOR LOGIN SYSTEM (Ported from Python)
+    // --- Local Auth ---
     register_user(username: string, password: string): boolean {
         const users = this.getTable('table_users');
-        
-        // UNIQUE constraint check
-        if (users.find((u: any) => u.username === username)) {
-            return false; // IntegrityError equivalent
-        }
-
-        const newUser = {
-            id: users.length + 1, // AUTOINCREMENT
-            username,
-            password,
-            role: 'ADMIN' // Defaulting to Admin for local registration
-        };
-
-        users.push(newUser);
+        if (users.find((u: any) => u.username === username)) return false;
+        users.push({ id: users.length + 1, username, password, role: 'ADMIN' });
         this.saveTable('table_users', users);
         return true;
     }
@@ -97,39 +73,23 @@ class SQLiteSimulator {
     check_login(username: string, password: string): User | null {
         const users = this.getTable('table_users');
         const user = users.find((u: any) => u.username === username && u.password === password);
-        
-        if (user) {
-            return {
-                id: user.id.toString(),
-                username: user.username,
-                role: (user.role as Role) || Role.EMPLOYEE 
-            };
-        }
+        if (user) return { id: user.id.toString(), username: user.username, role: (user.role as Role) || Role.EMPLOYEE };
         return null; 
     }
 
     save_employee(user: User, password?: string) {
         const users = this.getTable('table_users');
         const existingIndex = users.findIndex((u: any) => u.username === user.username); 
-
         if (existingIndex >= 0) {
             users[existingIndex] = { ...users[existingIndex], ...user, password: password || users[existingIndex].password };
         } else {
-            users.push({
-                id: users.length + 1,
-                username: user.username,
-                password: password || '1234',
-                role: Role.EMPLOYEE
-            });
+            users.push({ id: users.length + 1, username: user.username, password: password || '1234', role: Role.EMPLOYEE });
         }
         this.saveTable('table_users', users);
     }
 
     get_all_employees(): User[] {
-        const users = this.getTable('table_users');
-        return users
-            .filter((u: any) => u.role === Role.EMPLOYEE)
-            .map((u: any) => ({ id: u.id.toString(), username: u.username, role: Role.EMPLOYEE }));
+        return this.getTable('table_users').filter((u: any) => u.role === Role.EMPLOYEE).map((u: any) => ({ id: u.id.toString(), username: u.username, role: Role.EMPLOYEE }));
     }
     
     delete_user(userId: string) {
@@ -139,8 +99,7 @@ class SQLiteSimulator {
     }
     
     reset_admin_password_with_key(key: string): boolean {
-        const MASTER_KEY = "RGcreation"; 
-        if (key === MASTER_KEY) {
+        if (key === "RGcreation") {
             const users = this.getTable('table_users');
             const adminIndex = users.findIndex((u: any) => u.role === 'ADMIN');
             if (adminIndex >= 0) {
@@ -163,65 +122,29 @@ class SQLiteSimulator {
         return false;
     }
 
-    // 3. FUNCTIONS FOR PRODUCTS
+    // --- Local Data Methods ---
     add_product(product: Product) {
         const products = this.getTable('table_products');
         const existingIndex = products.findIndex((p: any) => p.id === product.id);
-
-        const row = {
-            id: product.id,
-            product_name: product.name, 
-            price: product.price,       
-            quantity: product.stock,    
-            brand: product.brand,
-            expireDate: product.expireDate,
-            stockHistory: product.stockHistory
-        };
-
-        if (existingIndex >= 0) {
-            products[existingIndex] = row;
-        } else {
-            products.push(row);
-        }
-
+        const row = { id: product.id, product_name: product.name, price: product.price, quantity: product.stock, brand: product.brand, expireDate: product.expireDate, stockHistory: product.stockHistory };
+        if (existingIndex >= 0) products[existingIndex] = row;
+        else products.push(row);
         this.saveTable('table_products', products);
     }
 
     get_all_products(): Product[] {
-        const rows = this.getTable('table_products');
-        return rows.map((row: any) => ({
-            id: row.id,
-            name: row.product_name,
-            price: row.price,
-            stock: row.quantity,
-            brand: row.brand || 'Generic',
-            expireDate: row.expireDate || '',
-            stockHistory: row.stockHistory || []
-        }));
+        return this.getTable('table_products').map((row: any) => ({ id: row.id, name: row.product_name, price: row.price, stock: row.quantity, brand: row.brand || 'Generic', expireDate: row.expireDate || '', stockHistory: row.stockHistory || [] }));
     }
 
     delete_product(productId: string) {
-        let products = this.getTable('table_products');
-        products = products.filter((p: any) => p.id !== productId);
+        const products = this.getTable('table_products').filter((p: any) => p.id !== productId);
         this.saveTable('table_products', products);
     }
 
-    // Sales
-    get_all_sales(): Sale[] {
-        return this.getTable('table_sales');
-    }
+    get_all_sales(): Sale[] { return this.getTable('table_sales'); }
+    add_sale(sale: Sale) { const sales = this.getTable('table_sales'); sales.push(sale); this.saveTable('table_sales', sales); }
 
-    add_sale(sale: Sale) {
-        const sales = this.getTable('table_sales');
-        sales.push(sale);
-        this.saveTable('table_sales', sales);
-    }
-
-    // Customers
-    get_all_customers(): Customer[] {
-        return this.getTable('table_customers');
-    }
-
+    get_all_customers(): Customer[] { return this.getTable('table_customers'); }
     save_customer(customer: Customer) {
         const customers = this.getTable('table_customers');
         const index = customers.findIndex((c: any) => c.id === customer.id);
@@ -229,39 +152,24 @@ class SQLiteSimulator {
         else customers.push(customer);
         this.saveTable('table_customers', customers);
     }
-    
     delete_customer(id: string) {
-        let customers = this.getTable('table_customers');
-        customers = customers.filter((c: any) => c.id !== id);
+        const customers = this.getTable('table_customers').filter((c: any) => c.id !== id);
         this.saveTable('table_customers', customers);
     }
 
-    // Shop Details
     get_shop_details(): ShopDetails | null {
-        const data = localStorage.getItem('table_shop_details');
-        if (data) {
-            try {
-                return JSON.parse(data);
-            } catch (e) {
-                return null;
-            }
-        }
-        return null;
+        try { return JSON.parse(localStorage.getItem('table_shop_details') || 'null'); } catch { return null; }
     }
-
-    save_shop_details(details: ShopDetails) {
-        localStorage.setItem('table_shop_details', JSON.stringify(details));
-    }
+    save_shop_details(details: ShopDetails) { localStorage.setItem('table_shop_details', JSON.stringify(details)); }
 
     export_database(): string {
-        const data = {
+        return JSON.stringify({
             users: this.getTable('table_users'),
             products: this.getTable('table_products'),
             sales: this.getTable('table_sales'),
             customers: this.getTable('table_customers'),
             shop_details: this.getTable('table_shop_details')
-        };
-        return JSON.stringify(data, null, 2);
+        }, null, 2);
     }
 
     import_database(jsonData: string): boolean {
@@ -282,7 +190,6 @@ class SQLiteSimulator {
 
 const sqlite = new SQLiteSimulator();
 
-// --- Helper for Invoice Number ---
 const generateInvoiceNumber = () => {
   const now = new Date();
   const dateStr = now.toISOString().split('T')[0].replace(/-/g, '');
@@ -292,14 +199,67 @@ const generateInvoiceNumber = () => {
 
 const database = {
   isCloud,
-  get isDrive() { return false; }, // Deprecated
+  
+  // --- ERP Connection Methods ---
+  setupERP: (config: any) => {
+      saveERPConfig(config);
+  },
+  disconnectERP: () => {
+      disconnectERP();
+  },
+
+  // --- Real-time ERP Monitoring ---
+  async sendHeartbeat(user: User, deviceId: string) {
+      if (isCloud && db) {
+          try {
+              const deviceRef = doc(db, "active_devices", deviceId);
+              await setDoc(deviceRef, {
+                  userId: user.id,
+                  username: user.username,
+                  role: user.role,
+                  lastSeen: serverTimestamp(),
+                  status: 'online',
+                  userAgent: navigator.userAgent
+              }, { merge: true });
+          } catch (e) {
+              console.error("Heartbeat fail", e);
+          }
+      }
+  },
+
+  listenToDevices(callback: (devices: any[]) => void): () => void {
+      if (isCloud && db) {
+          const q = query(collection(db, "active_devices"));
+          const unsubscribe = onSnapshot(q, (snapshot) => {
+              const devices = snapshot.docs.map(doc => {
+                  const data = doc.data();
+                  // Check if active within last 2 minutes
+                  const lastSeenDate = data.lastSeen ? (data.lastSeen instanceof Timestamp ? data.lastSeen.toDate() : new Date(data.lastSeen)) : new Date(0);
+                  const isOnline = (Date.now() - lastSeenDate.getTime()) < 2 * 60 * 1000;
+                  
+                  return {
+                      id: doc.id,
+                      ...data,
+                      isOnline,
+                      lastSeen: lastSeenDate.toLocaleString()
+                  };
+              });
+              callback(devices);
+          }, (error) => {
+              console.error("ERP Listener Error:", error);
+          });
+          return unsubscribe;
+      }
+      return () => {};
+  },
 
   // --- Auth ---
   async login(usernameOrEmail: string, password: string): Promise<User | null> {
-    if (isCloud) {
-       // Firebase Logic (Omitted for brevity, same as original)
+    if (isCloud && auth) {
        try {
-        const userCredential = await signInWithEmailAndPassword(auth, usernameOrEmail, password);
+        // In Cloud mode, we treat username as email if it doesn't have @
+        const email = usernameOrEmail.includes('@') ? usernameOrEmail : `${usernameOrEmail}@rgshop.com`;
+        const userCredential = await signInWithEmailAndPassword(auth, email, password);
         const fbUser = userCredential.user;
         const userDocRef = doc(db, "users", fbUser.uid);
         const userDoc = await getDoc(userDocRef);
@@ -315,19 +275,12 @@ const database = {
         return null;
       }
     } else {
-      // Use SQLite Logic
       return sqlite.check_login(usernameOrEmail, password);
     }
   },
 
-  async enableDriveMode(): Promise<boolean> {
-      console.warn("Drive mode is deprecated.");
-      return false;
-  },
-
   async registerAdmin(user: User, password: string): Promise<boolean> {
-    if (isCloud) {
-      // Firebase Logic
+    if (isCloud && auth) {
       try {
         const email = user.username.includes('@') ? user.username : `${user.username}@rgshop.com`;
         const userCredential = await createUserWithEmailAndPassword(auth, email, password);
@@ -337,6 +290,7 @@ const database = {
         });
         return true;
       } catch (error) {
+        console.error(error);
         return false;
       }
     } else {
@@ -345,7 +299,7 @@ const database = {
   },
   
   async resetAdminPassword(keyOrEmail: string): Promise<{success: boolean, message: string}> {
-      if (isCloud) {
+      if (isCloud && auth) {
           try {
               if (!keyOrEmail.includes('@')) return { success: false, message: "Please enter a valid email address." };
               await sendPasswordResetEmail(auth, keyOrEmail);
@@ -364,7 +318,7 @@ const database = {
   },
 
   async changePassword(newPassword: string): Promise<{success: boolean, message: string}> {
-      if (isCloud) {
+      if (isCloud && auth) {
         try {
           if (!auth.currentUser) return { success: false, message: "No user logged in." };
           await updatePassword(auth.currentUser, newPassword);
@@ -389,7 +343,7 @@ const database = {
 
   // --- Products ---
   async getProducts(): Promise<Product[]> {
-    if (isCloud) {
+    if (isCloud && db) {
       const querySnapshot = await getDocs(collection(db, "products"));
       return querySnapshot.docs.map(docData => {
          const data = docData.data();
@@ -409,7 +363,7 @@ const database = {
   },
 
   async saveProduct(product: Product): Promise<void> {
-    if (isCloud) {
+    if (isCloud && db) {
       const docRef = doc(db, "products", product.id);
       const productData = {
           name: product.name,
@@ -429,13 +383,13 @@ const database = {
   },
   
   async deleteProduct(productId: string): Promise<void> {
-      if (isCloud) await deleteDoc(doc(db, "products", productId));
+      if (isCloud && db) await deleteDoc(doc(db, "products", productId));
       else sqlite.delete_product(productId);
   },
 
   // --- Sales ---
   async getSales(): Promise<Sale[]> {
-    if (isCloud) {
+    if (isCloud && db) {
       const q = query(collection(db, "sales")); 
       const querySnapshot = await getDocs(q);
       return querySnapshot.docs.map(docData => {
@@ -456,7 +410,7 @@ const database = {
   },
 
   async addSale(sale: Sale): Promise<void> {
-    if (isCloud) {
+    if (isCloud && db) {
       const invoiceNumber = generateInvoiceNumber();
       const shopDetails = await this.getShopDetails();
       const saleRecord = {
@@ -481,7 +435,7 @@ const database = {
 
   // --- Customers ---
   async getCustomers(): Promise<Customer[]> {
-    if (isCloud) {
+    if (isCloud && db) {
       const querySnapshot = await getDocs(collection(db, "customers"));
       return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Customer));
     } else {
@@ -490,18 +444,18 @@ const database = {
   },
 
   async saveCustomer(customer: Customer): Promise<void> {
-    if (isCloud) await setDoc(doc(db, "customers", customer.id), customer, { merge: true });
+    if (isCloud && db) await setDoc(doc(db, "customers", customer.id), customer, { merge: true });
     else sqlite.save_customer(customer);
   },
   
   async deleteCustomer(customerId: string): Promise<void> {
-      if (isCloud) await deleteDoc(doc(db, "customers", customerId));
+      if (isCloud && db) await deleteDoc(doc(db, "customers", customerId));
       else sqlite.delete_customer(customerId);
   },
 
   // --- Employees ---
   async getEmployees(): Promise<User[]> {
-    if (isCloud) {
+    if (isCloud && db) {
        const q = query(collection(db, "users"), where("role", "==", Role.EMPLOYEE));
        const querySnapshot = await getDocs(q);
        return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as User));
@@ -511,7 +465,7 @@ const database = {
   },
 
   async saveEmployee(user: User, password?: string): Promise<void> {
-      if (isCloud) {
+      if (isCloud && db) {
           await setDoc(doc(db, "users", user.id), { ...user, password, createdAt: serverTimestamp() }); 
       } else {
           sqlite.save_employee(user, password);
@@ -519,13 +473,13 @@ const database = {
   },
   
   async deleteEmployee(userId: string): Promise<void> {
-      if(isCloud) await deleteDoc(doc(db, "users", userId));
+      if(isCloud && db) await deleteDoc(doc(db, "users", userId));
       else sqlite.delete_user(userId);
   },
 
   // --- Shop Details ---
   async getShopDetails(): Promise<ShopDetails | null> {
-    if (isCloud) {
+    if (isCloud && db) {
         const docRef = doc(db, "settings", "shop_details");
         const docSnap = await getDoc(docRef);
         return docSnap.exists() ? docSnap.data() as ShopDetails : null;
@@ -535,7 +489,7 @@ const database = {
   },
 
   async saveShopDetails(details: ShopDetails): Promise<void> {
-    if (isCloud) await setDoc(doc(db, "settings", "shop_details"), details);
+    if (isCloud && db) await setDoc(doc(db, "settings", "shop_details"), details);
     else sqlite.save_shop_details(details);
   },
 

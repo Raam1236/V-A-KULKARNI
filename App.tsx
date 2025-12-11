@@ -152,6 +152,28 @@ const App: React.FC = () => {
   const [trialStatus, setTrialStatus] = useState<'loading' | 'active' | 'expired'>('loading');
   const [daysRemaining, setDaysRemaining] = useState(0);
 
+  // --- ERP / Heartbeat Logic ---
+  useEffect(() => {
+      // Create a unique Device ID for this browser if not exists
+      let deviceId = localStorage.getItem('rg_device_id');
+      if (!deviceId) {
+          deviceId = `TERM-${Math.random().toString(36).substr(2, 6).toUpperCase()}`;
+          localStorage.setItem('rg_device_id', deviceId);
+      }
+
+      if (database.isCloud && currentUser) {
+          // Send initial heartbeat
+          database.sendHeartbeat(currentUser, deviceId);
+          
+          // Interval heartbeat
+          const interval = setInterval(() => {
+              database.sendHeartbeat(currentUser, deviceId);
+          }, 30000); // 30s
+
+          return () => clearInterval(interval);
+      }
+  }, [currentUser]);
+
   // --- Trial Logic ---
   useEffect(() => {
       const checkTrial = () => {
@@ -324,8 +346,8 @@ const App: React.FC = () => {
   };
   
   const getStatusText = () => {
-      if (database.isCloud) return { text: "● CLOUD CONNECTED", color: "text-green-400" };
-      return { text: "● LOCAL MODE", color: "text-yellow-400" };
+      if (database.isCloud) return { text: "● ERP ONLINE", color: "text-green-400" };
+      return { text: "● SINGLE PC MODE", color: "text-yellow-400" };
   };
 
   const status = getStatusText();

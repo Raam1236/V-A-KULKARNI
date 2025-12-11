@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAppContext } from '../../hooks/useAppContext';
 import Analytics from './Analytics';
 import ProductManagement from './ProductManagement';
@@ -11,8 +11,145 @@ import AIAssistant from './AIAssistant';
 import QRGenerator from './QRGenerator';
 import SmartInsights from './SmartInsights';
 import CertificateGenerator from './CertificateGenerator';
+import database from '../../services/database';
 
-type Tab = 'analytics' | 'insights' | 'products' | 'employees' | 'customers' | 'settings' | 'price-variator' | 'qr-generator' | 'certificates';
+type Tab = 'analytics' | 'insights' | 'products' | 'employees' | 'customers' | 'settings' | 'price-variator' | 'qr-generator' | 'certificates' | 'erp-monitor';
+
+const ERPMonitor: React.FC = () => {
+    const [devices, setDevices] = useState<any[]>([]);
+    const [loading, setLoading] = useState(true);
+    const { logout } = useAppContext();
+    
+    useEffect(() => {
+        // If local mode, stop loading immediately
+        if (!database.isCloud) {
+            setLoading(false);
+            return;
+        }
+
+        // Listen for updates
+        const unsubscribe = database.listenToDevices((liveDevices) => {
+            setDevices(liveDevices);
+            setLoading(false);
+        });
+        
+        // Safety timeout in case firebase hangs
+        const timeout = setTimeout(() => {
+            setLoading(false);
+        }, 8000);
+
+        return () => {
+            unsubscribe();
+            clearTimeout(timeout);
+        };
+    }, []);
+
+    const myDeviceId = localStorage.getItem('rg_device_id');
+
+    // SCENARIO 1: Local Mode
+    if (!database.isCloud) {
+        return (
+            <div>
+                <h1 className="text-3xl font-bold text-on-surface mb-6 flex items-center gap-3">
+                    <ServerIcon className="w-8 h-8 text-gray-400" /> 
+                    ERP Monitor
+                </h1>
+                <div className="bg-yellow-50 border-l-4 border-yellow-400 p-8 rounded-lg shadow-sm">
+                    <h2 className="text-2xl font-bold text-yellow-800 mb-2">⚠ ERP System Not Connected</h2>
+                    <p className="text-yellow-700 mb-6">
+                        You are currently running in <strong>Single PC Mode</strong> (Local Database). 
+                        To monitor multiple shop computers, you must connect them to a central Cloud Database.
+                    </p>
+                    <div className="bg-white p-6 rounded border border-yellow-200">
+                        <h3 className="font-bold text-gray-800 mb-2">How to Connect:</h3>
+                        <ol className="list-decimal list-inside text-gray-600 space-y-2 mb-4">
+                            <li>Click the <strong>Logout</strong> button below.</li>
+                            <li>On the Login Screen, click <strong>"Connect Multiple Computers (ERP Setup)"</strong>.</li>
+                            <li>Enter your Cloud Credentials (API Key & Project ID).</li>
+                            <li>Login again to see your devices here.</li>
+                        </ol>
+                        <button onClick={logout} className="px-4 py-2 bg-yellow-600 hover:bg-yellow-700 text-white font-bold rounded shadow transition-colors">
+                            Logout & Connect Now
+                        </button>
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
+    // SCENARIO 2: Cloud Mode
+    return (
+        <div>
+            <h1 className="text-3xl font-bold text-on-surface mb-6 flex items-center gap-3">
+                <ServerIcon className="w-8 h-8 text-green-600" /> 
+                Connected ERP Devices
+            </h1>
+            <p className="text-on-surface/60 mb-6">
+                Real-time status of all computers connected to your shop's network.
+            </p>
+
+            {loading ? (
+                <div className="flex flex-col items-center justify-center p-12 bg-surface rounded-lg shadow-inner animate-pulse">
+                    <ServerIcon className="w-16 h-16 text-gray-300 mb-4" />
+                    <p className="text-xl font-bold text-gray-500">Scanning Network...</p>
+                    <p className="text-sm text-gray-400">Connecting to Cloud Database</p>
+                </div>
+            ) : devices.length === 0 ? (
+                <div className="bg-red-50 border-l-4 border-red-500 p-8 rounded-lg">
+                    <h2 className="text-xl font-bold text-red-800 mb-2">No Active Devices Found</h2>
+                    <p className="text-red-700">
+                        The system is connected to the cloud, but no devices are reporting a "Heartbeat".
+                    </p>
+                    <ul className="list-disc list-inside text-sm text-red-600 mt-4 space-y-1">
+                        <li>Check your internet connection.</li>
+                        <li>Ensure your API Key and Project ID are correct.</li>
+                        <li>Verify Firestore Database Rules allow read/write.</li>
+                        <li>Try reloading the page (F5) to restart the heartbeat.</li>
+                    </ul>
+                </div>
+            ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {devices.map(dev => (
+                        <div key={dev.id} className={`p-6 rounded-lg shadow-lg border-l-4 transition-all duration-300 ${dev.isOnline ? 'border-green-500 bg-surface transform hover:-translate-y-1' : 'border-gray-400 bg-gray-100 opacity-75'}`}>
+                            <div className="flex justify-between items-start mb-2">
+                                <h3 className="font-bold text-lg text-on-surface flex items-center gap-2">
+                                    <DesktopIcon />
+                                    {dev.id === myDeviceId ? 'This Computer (Admin)' : dev.id}
+                                </h3>
+                                {dev.isOnline ? (
+                                    <span className="bg-green-100 text-green-700 text-xs px-2 py-1 rounded-full font-bold flex items-center gap-1">
+                                        <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span> Online
+                                    </span>
+                                ) : (
+                                    <span className="bg-gray-200 text-gray-600 text-xs px-2 py-1 rounded-full font-bold">● Offline</span>
+                                )}
+                            </div>
+                            <div className="mt-4 space-y-2 text-sm border-t border-gray-100 pt-2">
+                                <div className="flex justify-between">
+                                    <span className="text-gray-500">User:</span>
+                                    <span className="font-medium text-on-surface">{dev.username} ({dev.role})</span>
+                                </div>
+                                <div className="flex justify-between">
+                                    <span className="text-gray-500">Status:</span>
+                                    <span className={dev.isOnline ? "text-green-600 font-bold" : "text-gray-500"}>
+                                        {dev.isOnline ? "Active Now" : "Disconnected"}
+                                    </span>
+                                </div>
+                                <div className="flex justify-between">
+                                    <span className="text-gray-500">Last Seen:</span>
+                                    <span className="text-xs text-on-surface/70 text-right max-w-[150px]">{dev.lastSeen}</span>
+                                </div>
+                            </div>
+                            <div className="mt-3 text-[10px] text-gray-400 font-mono truncate bg-gray-50 p-1 rounded">
+                                {dev.userAgent}
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+}
 
 const AdminDashboard: React.FC = () => {
   const { currentUser, logout, shopDetails, products, sales, customers, theme, setTheme } = useAppContext();
@@ -25,6 +162,7 @@ const AdminDashboard: React.FC = () => {
 
   const tabs: { id: Tab; label: string; icon: React.ReactElement }[] = [
     { id: 'analytics', label: 'Analytics', icon: <ChartBarIcon /> },
+    { id: 'erp-monitor', label: 'ERP Monitor', icon: <ServerIcon /> },
     { id: 'insights', label: 'Smart Insights', icon: <LightningIcon /> },
     { id: 'products', label: 'Products', icon: <CubeIcon /> },
     { id: 'employees', label: 'Employees', icon: <UsersIcon /> },
@@ -38,6 +176,7 @@ const AdminDashboard: React.FC = () => {
   const renderContent = () => {
     switch (activeTab) {
       case 'analytics': return <Analytics />;
+      case 'erp-monitor': return <ERPMonitor />;
       case 'insights': return <SmartInsights />;
       case 'products': return <ProductManagement />;
       case 'employees': return <EmployeeManagement />;
@@ -54,7 +193,7 @@ const AdminDashboard: React.FC = () => {
     <div className="flex h-screen bg-background text-on-surface">
       {/* Sidebar */}
       <nav className="w-64 bg-surface p-4 flex flex-col justify-between shadow-lg">
-        <div>
+        <div className="overflow-y-auto max-h-[85vh] scrollbar-thin">
           <h1 className="text-2xl font-bold text-on-surface mb-8 text-center">{shopDetails.name}</h1>
           <ul>
             {tabs.map(tab => (
@@ -140,6 +279,8 @@ const SunIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6
 const MoonIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" /></svg>;
 const BarcodeIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="currentColor" viewBox="0 0 24 24"><path d="M2 6h2v12H2V6zm3 0h1v12H5V6zm2 0h2v12H7V6zm3 0h1v12h-1V6zm2 0h3v12h-3V6zm4 0h2v12h-2V6zm3 0h1v12h-1V6z"/></svg>;
 const LightningIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>;
-const BadgeCheckIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" /></svg>;
+const BadgeCheckIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" /></svg>;
+const ServerIcon = ({className = "h-6 w-6"}) => <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01" /></svg>;
+const DesktopIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>;
 
 export default AdminDashboard;

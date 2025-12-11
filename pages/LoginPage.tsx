@@ -9,18 +9,29 @@ const AdminIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-12 
 const EmployeeIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" /></svg>;
 const BackIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M9.707 16.707a1 1 0 01-1.414 0l-6-6a1 1 0 010-1.414l6-6a1 1 0 011.414 1.414L5.414 9H17a1 1 0 110 2H5.414l4.293 4.293a1 1 0 010 1.414z" clipRule="evenodd" /></svg>;
 const KeyIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M18 8a6 6 0 01-7.743 5.743L10 14l-1 1-1 1H6v2H2v-4l4.257-4.257A6 6 0 1118 8zm-6-4a1 1 0 100 2 2 2 0 000-2z" clipRule="evenodd" /></svg>;
+const CloudIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path d="M5.5 16a3.5 3.5 0 01-.369-6.98 4 4 0 117.753-1.977A4.5 4.5 0 1113.5 16h-8z" /></svg>;
 
 const LoginPage: React.FC = () => {
   const { setCurrentUser, showToast, setIsLoading } = useAppContext();
   
-  // States: 'checking' -> 'create_admin' OR 'selection' -> 'login_admin'/'login_employee' -> 'forgot_password'
-  const [view, setView] = useState<'checking' | 'create_admin' | 'selection' | 'login_admin' | 'login_employee' | 'forgot_password'>('checking');
+  // States: 'checking' -> 'create_admin' OR 'selection' -> 'login_admin'/'login_employee' -> 'forgot_password' -> 'erp_setup'
+  const [view, setView] = useState<'checking' | 'create_admin' | 'selection' | 'login_admin' | 'login_employee' | 'forgot_password' | 'erp_setup'>('checking');
   
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [recoveryKey, setRecoveryKey] = useState('');
   const [error, setError] = useState('');
   const [isShaking, setIsShaking] = useState(false);
+
+  // ERP Config State
+  const [erpConfig, setErpConfig] = useState({
+      apiKey: '',
+      authDomain: '',
+      projectId: '',
+      storageBucket: '',
+      messagingSenderId: '',
+      appId: ''
+  });
 
   useEffect(() => {
       const checkAdmin = async () => {
@@ -37,8 +48,6 @@ const LoginPage: React.FC = () => {
               }
           } else {
               // Cloud mode: We assume setup is done or handled via console/first run
-              // For simplicity in this demo app, we just show selection. 
-              // Real apps would check db or rely on auth providers.
               setView('selection');
           }
       };
@@ -119,6 +128,16 @@ const LoginPage: React.FC = () => {
       }
   };
 
+  const handleErpSetup = (e: React.FormEvent) => {
+      e.preventDefault();
+      if (!erpConfig.apiKey || !erpConfig.projectId) {
+          triggerError("API Key and Project ID are required.");
+          return;
+      }
+      database.setupERP(erpConfig);
+      showToast("ERP Configuration Saved! Connecting...");
+  };
+
   const handleBackToSelection = () => {
       setError('');
       setUsername('');
@@ -149,7 +168,65 @@ const LoginPage: React.FC = () => {
         {error && <p className={`text-red-500 dark:text-red-400 text-sm text-center ${isShaking ? 'animate-shake' : ''}`}>{error}</p>}
         <button type="submit" className="w-full py-3 px-4 bg-primary text-on-primary font-semibold rounded-md hover:bg-indigo-500 transition-colors duration-300 shadow-lg">Create Admin Account</button>
         </form>
+        <div className="mt-6 text-center">
+             <button onClick={() => setView('erp_setup')} className="text-xs text-secondary hover:underline font-semibold flex items-center justify-center gap-1 mx-auto">
+                 <CloudIcon /> Join Existing ERP System
+             </button>
+        </div>
     </div>
+  );
+
+  const renderERPSetup = () => (
+      <div className="animate-fade-in-down w-full max-w-lg bg-surface p-8 rounded-lg shadow-2xl relative">
+           <button 
+                onClick={handleBackToSelection} 
+                className="absolute top-4 left-4 text-on-surface/60 hover:text-primary transition-colors flex items-center text-sm font-medium"
+            >
+                <BackIcon /> Back
+            </button>
+            <div className="text-center mb-6">
+                <h2 className="text-2xl font-bold text-on-surface">Connect Shop ERP</h2>
+                <p className="text-sm text-on-surface/60 mt-2">
+                    Enter your Cloud Database credentials to connect this computer to your central shop system. 
+                    (Ask your Admin for these details).
+                </p>
+            </div>
+            
+            <form onSubmit={handleErpSetup} className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                    <div className="col-span-2">
+                        <label className="block text-xs font-bold text-on-surface">API Key</label>
+                        <input className="w-full p-2 border rounded text-sm bg-background text-on-surface" value={erpConfig.apiKey} onChange={e => setErpConfig({...erpConfig, apiKey: e.target.value})} placeholder="AIza..." required />
+                    </div>
+                    <div>
+                        <label className="block text-xs font-bold text-on-surface">Project ID</label>
+                        <input className="w-full p-2 border rounded text-sm bg-background text-on-surface" value={erpConfig.projectId} onChange={e => setErpConfig({...erpConfig, projectId: e.target.value})} placeholder="shop-id" required />
+                    </div>
+                    <div>
+                        <label className="block text-xs font-bold text-on-surface">Auth Domain</label>
+                        <input className="w-full p-2 border rounded text-sm bg-background text-on-surface" value={erpConfig.authDomain} onChange={e => setErpConfig({...erpConfig, authDomain: e.target.value})} placeholder="id.firebaseapp.com" />
+                    </div>
+                    <div>
+                        <label className="block text-xs font-bold text-on-surface">Storage Bucket</label>
+                        <input className="w-full p-2 border rounded text-sm bg-background text-on-surface" value={erpConfig.storageBucket} onChange={e => setErpConfig({...erpConfig, storageBucket: e.target.value})} placeholder="id.appspot.com" />
+                    </div>
+                    <div>
+                        <label className="block text-xs font-bold text-on-surface">Messaging Sender ID</label>
+                        <input className="w-full p-2 border rounded text-sm bg-background text-on-surface" value={erpConfig.messagingSenderId} onChange={e => setErpConfig({...erpConfig, messagingSenderId: e.target.value})} placeholder="12345..." />
+                    </div>
+                    <div className="col-span-2">
+                        <label className="block text-xs font-bold text-on-surface">App ID</label>
+                        <input className="w-full p-2 border rounded text-sm bg-background text-on-surface" value={erpConfig.appId} onChange={e => setErpConfig({...erpConfig, appId: e.target.value})} placeholder="1:12345:web:..." />
+                    </div>
+                </div>
+                
+                {error && <p className={`text-red-500 text-sm text-center ${isShaking ? 'animate-shake' : ''}`}>{error}</p>}
+                
+                <button type="submit" className="w-full py-3 px-4 bg-green-600 text-white font-bold rounded-md hover:bg-green-700 transition-colors shadow-md flex justify-center items-center gap-2">
+                    <CloudIcon /> Connect to ERP
+                </button>
+            </form>
+      </div>
   );
 
   const renderPortalSelection = () => (
@@ -179,6 +256,19 @@ const LoginPage: React.FC = () => {
                   <h3 className="text-xl font-bold text-on-surface mt-4">Employee POS</h3>
                   <p className="text-sm text-on-surface/60 mt-2 text-center">Billing, inventory checks, and customer handling.</p>
               </button>
+          </div>
+          
+          {/* ERP Connection Link */}
+          <div className="mt-8 text-center">
+              <button 
+                onClick={() => setView('erp_setup')}
+                className="text-sm text-gray-500 hover:text-primary underline flex items-center justify-center gap-2 mx-auto transition-colors"
+              >
+                  <CloudIcon /> {database.isCloud ? "Configure ERP Connection" : "Connect Multiple Computers (ERP Setup)"}
+              </button>
+              {database.isCloud && (
+                  <p className="text-xs text-green-500 font-bold mt-1">● Connected to Cloud Database</p>
+              )}
           </div>
       </div>
   );
@@ -246,6 +336,11 @@ const LoginPage: React.FC = () => {
                 </div>
                 <h2 className="text-2xl font-bold text-on-surface">{isAdmin ? 'Admin Login' : 'Employee Login'}</h2>
                 <p className="text-sm text-on-surface/60">Please enter your credentials</p>
+                {database.isCloud && (
+                    <span className="inline-block mt-2 px-2 py-0.5 bg-green-100 text-green-700 text-[10px] rounded-full border border-green-200">
+                        ☁️ ERP Connected
+                    </span>
+                )}
             </div>
 
             <form onSubmit={handleLogin} className="space-y-6">
@@ -300,9 +395,9 @@ const LoginPage: React.FC = () => {
             </h1>
             <div className="flex items-center justify-center gap-2 mt-2">
                 {database.isCloud ? (
-                    <span className="px-2 py-0.5 rounded-full bg-green-500/10 text-green-500 text-xs font-bold border border-green-500/20">● Cloud Database</span>
+                    <span className="px-2 py-0.5 rounded-full bg-green-500/10 text-green-500 text-xs font-bold border border-green-500/20">● ERP Mode (Cloud)</span>
                 ) : (
-                    <span className="px-2 py-0.5 rounded-full bg-yellow-500/10 text-yellow-500 text-xs font-bold border border-yellow-500/20">● Local Mode</span>
+                    <span className="px-2 py-0.5 rounded-full bg-yellow-500/10 text-yellow-500 text-xs font-bold border border-yellow-500/20">● Single PC Mode</span>
                 )}
             </div>
         </div>
@@ -313,11 +408,13 @@ const LoginPage: React.FC = () => {
         {view === 'selection' && renderPortalSelection()}
         {(view === 'login_admin' || view === 'login_employee') && renderLoginForm()}
         {view === 'forgot_password' && renderForgotPassword()}
+        {view === 'erp_setup' && renderERPSetup()}
 
         {/* Footer */}
-        {!database.isCloud && view !== 'checking' && (
+        {!database.isCloud && view !== 'checking' && view !== 'erp_setup' && (
             <p className="mt-8 text-xs text-on-surface/40 text-center max-w-sm">
-                Running in Local Mode using Simulated SQLite. All data is stored securely in this browser instance.
+                Running in Single PC Mode. Data is stored only on this browser. 
+                <br/>Connect to ERP to sync with other computers.
             </p>
         )}
     </div>
