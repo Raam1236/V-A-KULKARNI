@@ -40,9 +40,11 @@ export interface Customer {
   name: string;
   mobile: string;
   email?: string;
-  loyaltyPoints: number;
+  loyaltyPoints: number; // Legacy points (optional)
+  walletBalance: number; // New 5% Cashback Wallet
   photo?: string; // Base64 string of the customer's face
   faceAttributes?: string; // AI description (e.g., "Male, approx 30s, glasses")
+  isVerified?: boolean; // True if OTP verified
 }
 
 export interface BillItem extends Product {
@@ -63,6 +65,8 @@ export interface Sale {
   customerMobile?: string;
   paymentMethod?: 'CASH' | 'UPI' | 'NET_BANKING';
   taxAmount?: number;
+  walletUsed?: number; // Amount redeemed from wallet
+  walletCredited?: number; // Amount added (5%)
 }
 
 export interface ShopDetails {
@@ -93,6 +97,8 @@ export interface Bill {
     type: 'percentage' | 'fixed';
     value: number;
   };
+  walletRedeemed?: number; // Amount to be deducted from bill
+  customerId?: string; // Link to actual customer object
 }
 
 export interface AppContextType {

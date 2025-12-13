@@ -308,7 +308,20 @@ const LoginPage: React.FC = () => {
                         autoFocus
                     />
                 </div>
-                {error && <p className={`text-red-500 text-sm text-center ${isShaking ? 'animate-shake' : ''}`}>{error}</p>}
+                {error && (
+                    <div className={`text-center ${isShaking ? 'animate-shake' : ''}`}>
+                        <p className="text-red-500 text-sm mb-2">{error}</p>
+                        {(error.includes('Invalid API Key') || error.includes('ERP')) && (
+                             <button 
+                                type="button"
+                                onClick={() => setView('erp_setup')}
+                                className="text-xs bg-red-100 text-red-600 px-3 py-1 rounded-full border border-red-200 hover:bg-red-200 transition-colors font-bold"
+                             >
+                                Fix ERP Connection
+                             </button>
+                        )}
+                    </div>
+                )}
                 <button 
                     type="submit" 
                     className="w-full py-3 px-4 bg-red-500 hover:bg-red-600 text-white font-semibold rounded-md transition-colors duration-300 shadow-md"

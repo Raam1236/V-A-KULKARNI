@@ -212,6 +212,7 @@ const CustomerFaceCamera: React.FC<CustomerFaceCameraProps> = ({ onIdentify, isA
             name: newCustomerName,
             mobile: newCustomerMobile,
             loyaltyPoints: 0,
+            walletBalance: 0,
             photo: capturedImage || undefined,
             faceAttributes: faceAttributes
         };

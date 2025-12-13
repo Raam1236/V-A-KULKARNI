@@ -9,7 +9,7 @@ interface InvoiceModalProps {
 }
 
 const InvoiceModal: React.FC<InvoiceModalProps> = ({ bill, onNewBill }) => {
-    const { shopDetails } = useAppContext();
+    const { shopDetails, customers } = useAppContext();
     const invoiceRef = useRef<HTMLDivElement>(null);
     const [qrStatus, setQrStatus] = useState("Generating...");
 
@@ -99,6 +99,12 @@ const InvoiceModal: React.FC<InvoiceModalProps> = ({ bill, onNewBill }) => {
             }
         }
     };
+    
+    // Calculate Earned Points (5%)
+    const pointsEarned = Math.floor(bill.total * 0.05);
+    // Determine new balance if customer exists
+    const customer = customers.find(c => c.mobile === bill.customerMobile);
+    const newWalletBalance = customer ? (customer.walletBalance) : 0; // Updated in DB already
 
     return (
         <div className="fixed inset-0 flex items-center justify-center z-[80] bg-black/70 backdrop-blur-sm p-4">
@@ -161,10 +167,32 @@ const InvoiceModal: React.FC<InvoiceModalProps> = ({ bill, onNewBill }) => {
                             </div>
                         )}
                         
+                        {bill.walletRedeemed && bill.walletRedeemed > 0 && (
+                             <div className="flex justify-between mb-1 font-bold">
+                                <span>Wallet Redeemed:</span>
+                                <span>-₹{bill.walletRedeemed.toFixed(2)}</span>
+                            </div>
+                        )}
+                        
                         <div className="flex justify-between font-bold text-sm mb-4 border-t border-dashed border-gray-400 pt-2">
                             <span>TOTAL:</span>
                             <span>₹{bill.total.toFixed(2)}</span>
                         </div>
+
+                        {/* Loyalty Section */}
+                        {bill.customerName !== 'Walk-in' && (
+                             <div className="border-t border-dashed border-gray-400 pt-2 mb-4 text-center">
+                                 <div className="font-bold mb-1">LOYALTY WALLET</div>
+                                 <div className="flex justify-between">
+                                     <span>Points Earned (5%):</span>
+                                     <span>+₹{pointsEarned}</span>
+                                 </div>
+                                 <div className="flex justify-between font-bold">
+                                     <span>New Balance:</span>
+                                     <span>₹{newWalletBalance.toFixed(2)}</span>
+                                 </div>
+                             </div>
+                        )}
 
                         <div className="mb-4 text-center">
                             <span className="border border-black px-2 py-1 rounded font-bold uppercase">

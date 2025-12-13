@@ -279,6 +279,11 @@ const App: React.FC = () => {
 
   const addSale = useCallback(async (bill: Bill) => {
     if (!currentUser) return;
+    
+    // Calculate Loyalty - 5% Cashback
+    const cashback = Math.floor(bill.total * 0.05);
+    const walletUsed = bill.walletRedeemed || 0;
+
     const newSale: Sale = {
       id: `sale_${Date.now()}`,
       date: new Date().toISOString(),
@@ -286,12 +291,29 @@ const App: React.FC = () => {
       total: bill.total,
       employeeId: currentUser.id,
       customerName: bill.customerName,
-      customerMobile: bill.customerMobile
+      customerMobile: bill.customerMobile,
+      paymentMethod: bill.paymentMethod,
+      walletUsed: walletUsed,
+      walletCredited: cashback,
+      taxAmount: bill.taxAmount
     };
 
-    // Optimistic Update
+    // Optimistic Update Sales
     setSales(prev => [...prev, newSale]);
-    await database.addSale(newSale);
+    await database.addSale(newSale); // DB handles persistence of sale & updating customer wallet doc
+    
+    // Optimistic Update Customer Wallet Local State
+    if (bill.customerMobile) {
+        setCustomers(prevCustomers => prevCustomers.map(c => {
+            if (c.mobile === bill.customerMobile) {
+                const oldBalance = c.walletBalance || 0;
+                // New Balance = Old - Redeemed + Cashback
+                const newBalance = oldBalance - walletUsed + cashback;
+                return { ...c, walletBalance: newBalance };
+            }
+            return c;
+        }));
+    }
     
     // Update Stocks
     const updatedProducts = [...products];

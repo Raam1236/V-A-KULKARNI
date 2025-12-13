@@ -1,7 +1,7 @@
 
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { useAppContext } from '../../hooks/useAppContext';
-import { Product, BillItem, Bill } from '../../types';
+import { Product, BillItem, Bill, Customer } from '../../types';
 import InvoiceModal from './InvoiceModal';
 import QRScannerModal from './QRScannerModal';
 import VisualScannerModal from './VisualScannerModal';
@@ -236,7 +236,7 @@ const DiscountModal: React.FC<DiscountModalProps> = ({ isOpen, onClose, onApply,
 };
 
 const EmployeePOS: React.FC = () => {
-    const { logout, products, addSale, showToast, currentUser, shopDetails } = useAppContext();
+    const { logout, products, customers, addSale, showToast, currentUser, shopDetails } = useAppContext();
     const [currentBill, setCurrentBill] = useState<Bill>({ customerName: 'Walk-in', customerMobile: '', items: [], subtotal: 0, taxAmount: 0, total: 0 });
     const [searchTerm, setSearchTerm] = useState('');
     const [invoiceReady, setInvoiceReady] = useState<Bill | null>(null);
@@ -260,6 +260,9 @@ const EmployeePOS: React.FC = () => {
     const [isProcessingVoice, setIsProcessingVoice] = useState(false);
     
     const searchInputRef = useRef<HTMLInputElement>(null);
+    
+    // Wallet State
+    const [activeCustomer, setActiveCustomer] = useState<Customer | null>(null);
 
     useEffect(() => {
         audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
@@ -326,7 +329,7 @@ const EmployeePOS: React.FC = () => {
         };
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [searchTerm, selectedResultIndex, filteredProducts, isScannerOpen, currentBill, paymentModalOpen]); // Removed isVoiceListening dep to prevent loop, logic handles it
+    }, [searchTerm, selectedResultIndex, filteredProducts, isScannerOpen, currentBill, paymentModalOpen]);
 
     // Upsell Logic
     useEffect(() => {
@@ -341,6 +344,20 @@ const EmployeePOS: React.FC = () => {
         }, 600);
         return () => clearTimeout(timer);
     }, [currentBill.items]);
+    
+    // Detect Customer Change for Wallet
+    useEffect(() => {
+        if (currentBill.customerMobile && currentBill.customerMobile.length >= 10) {
+            const found = customers.find(c => c.mobile === currentBill.customerMobile);
+            if (found) {
+                setActiveCustomer(found);
+            } else {
+                setActiveCustomer(null);
+            }
+        } else {
+            setActiveCustomer(null);
+        }
+    }, [currentBill.customerMobile, customers]);
 
     const playBeep = () => {
         if (audioContextRef.current) {
@@ -413,6 +430,16 @@ const EmployeePOS: React.FC = () => {
             return calculateTotal({ ...prev, items: newItems });
         });
     };
+    
+    const handleRedeemWallet = () => {
+        if (!activeCustomer || activeCustomer.walletBalance <= 0) return;
+        
+        // Don't allow redemption greater than bill amount
+        const maxRedeem = Math.min(currentBill.subtotal, activeCustomer.walletBalance);
+        
+        setCurrentBill(prev => calculateTotal({ ...prev, walletRedeemed: maxRedeem }));
+        showToast(`Redeemed ₹${maxRedeem.toFixed(2)} from Wallet!`);
+    };
 
     const calculateTotal = (bill: Bill): Bill => {
         const subtotal = bill.items.reduce((sum, item) => {
@@ -434,6 +461,11 @@ const EmployeePOS: React.FC = () => {
             totalAfterDiscount -= discountAmount;
         }
         
+        // Apply Wallet Redemption
+        if (bill.walletRedeemed) {
+            totalAfterDiscount -= bill.walletRedeemed;
+        }
+        
         // Apply GST if Default Rate is set
         let taxAmount = 0;
         if (shopDetails.defaultGstRate && shopDetails.defaultGstRate > 0) {
@@ -449,10 +481,45 @@ const EmployeePOS: React.FC = () => {
         if (currentBill.items.length === 0) return;
         if (window.confirm("Clear current bill?")) {
             setCurrentBill({ customerName: 'Walk-in', customerMobile: '', items: [], subtotal: 0, taxAmount: 0, total: 0 });
+            setActiveCustomer(null);
+        }
+    };
+    
+    const handleVerifyCustomer = () => {
+        if (!currentBill.customerMobile) {
+            showToast("Enter mobile number first", "error");
+            return;
+        }
+        
+        // Simulation of OTP
+        const otp = prompt(`Simulating SMS to ${currentBill.customerMobile}: Enter 1234 to verify.`);
+        if (otp === '1234') {
+            showToast("✅ Customer Verified!");
+            // Check if registered
+            const found = customers.find(c => c.mobile === currentBill.customerMobile);
+            if (found) {
+                setCurrentBill(prev => ({ ...prev, customerName: found.name }));
+                setActiveCustomer(found);
+                showToast(`Welcome back, ${found.name}! Wallet: ₹${found.walletBalance}`);
+            } else {
+                showToast("New Number. Please register in Admin Panel for Loyalty Points.", "error");
+            }
+        } else {
+            showToast("❌ Incorrect OTP", "error");
         }
     };
 
     const handleQRScan = (data: string, keepOpen = false) => {
+        // Check if it's a customer card
+        const customer = customers.find(c => c.id === data);
+        if (customer) {
+            setCurrentBill(prev => ({ ...prev, customerName: customer.name, customerMobile: customer.mobile }));
+            setActiveCustomer(customer);
+            showToast(`Customer Identified: ${customer.name}`);
+            if (!keepOpen) setIsScannerOpen(false);
+            return;
+        }
+
         let product = products.find(p => p.id === data || p.name === data);
         if (!product) {
             try {
@@ -464,7 +531,7 @@ const EmployeePOS: React.FC = () => {
             addToBill(product);
             if (!keepOpen) setIsScannerOpen(false);
         } else {
-            showToast('Product Not Found', 'error');
+            showToast('Code not recognized', 'error');
         }
     };
 
@@ -579,6 +646,7 @@ const EmployeePOS: React.FC = () => {
         setInvoiceReady(finalizedBill);
         setPaymentModalOpen(false);
         setCurrentBill({ customerName: 'Walk-in', customerMobile: '', items: [], subtotal: 0, taxAmount: 0, total: 0 });
+        setActiveCustomer(null);
     };
 
     return (
@@ -658,14 +726,19 @@ const EmployeePOS: React.FC = () => {
                             className="w-full outline-none font-semibold text-sm px-1 text-slate-900"
                          />
                      </div>
-                     <div className="w-32 bg-white border border-blue-300 rounded p-1 flex flex-col justify-center shadow-sm">
+                     <div className="w-40 bg-white border border-blue-300 rounded p-1 flex flex-col justify-center shadow-sm">
                          <label className="text-[10px] text-gray-500 uppercase font-bold px-1">Mobile</label>
-                         <input 
-                            value={currentBill.customerMobile}
-                            onChange={e => setCurrentBill({...currentBill, customerMobile: e.target.value})}
-                            className="w-full outline-none font-semibold text-sm px-1 text-slate-900"
-                            placeholder="Optional"
-                         />
+                         <div className="flex">
+                             <input 
+                                value={currentBill.customerMobile}
+                                onChange={e => setCurrentBill({...currentBill, customerMobile: e.target.value})}
+                                className="w-full outline-none font-semibold text-sm px-1 text-slate-900"
+                                placeholder="Number"
+                             />
+                             <button onClick={handleVerifyCustomer} className="bg-yellow-400 hover:bg-yellow-500 text-yellow-900 px-2 rounded text-[10px] font-bold">
+                                 VERIFY
+                             </button>
+                         </div>
                      </div>
                  </div>
 
@@ -750,10 +823,6 @@ const EmployeePOS: React.FC = () => {
                      <span className="text-[10px] text-gray-500 uppercase font-bold">Total Items</span>
                      <span className="font-bold text-slate-800 text-xl leading-none">{currentBill.items.length}</span>
                  </div>
-                 <div className="flex flex-col items-end">
-                     <span className="text-[10px] text-gray-500 uppercase font-bold">Total Qty</span>
-                     <span className="font-bold text-slate-800 text-xl leading-none">{currentBill.items.reduce((a,b) => a+b.quantity, 0)}</span>
-                 </div>
                  <div className="h-8 w-px bg-blue-300"></div>
                  <div className="flex flex-col items-end">
                      <span className="text-[10px] text-gray-500 uppercase font-bold">Subtotal</span>
@@ -771,6 +840,18 @@ const EmployeePOS: React.FC = () => {
                      <div className="flex flex-col items-end">
                         <span className="text-[10px] text-blue-600 uppercase font-bold">GST {shopDetails.defaultGstRate}%</span>
                         <span className="font-bold text-blue-700 text-xl leading-none">+{currentBill.taxAmount.toFixed(2)}</span>
+                     </div>
+                 )}
+                 {activeCustomer && (
+                     <div className="flex items-center gap-2 bg-yellow-100 px-3 py-1 rounded border border-yellow-300">
+                         <div className="flex flex-col items-end">
+                             <span className="text-[10px] text-yellow-800 uppercase font-bold">Wallet: ₹{activeCustomer.walletBalance.toFixed(2)}</span>
+                             {currentBill.walletRedeemed ? (
+                                 <span className="text-xs font-bold text-red-600">Redeemed: -{currentBill.walletRedeemed}</span>
+                             ) : (
+                                 <button onClick={handleRedeemWallet} className="text-[10px] bg-yellow-500 text-white px-2 rounded hover:bg-yellow-600">REDEEM</button>
+                             )}
+                         </div>
                      </div>
                  )}
                  <div className="bg-slate-900 text-green-400 px-6 py-2 rounded shadow-lg flex flex-col items-end min-w-[200px] ml-4 border border-slate-700">
@@ -806,7 +887,7 @@ const EmployeePOS: React.FC = () => {
                      <span className="text-xs text-red-600 font-bold uppercase">Clear</span>
                  </button>
 
-                 <button onClick={() => setShowLiveMonitor(prev => !prev)} className={`hidden md:flex bg-white hover:bg-blue-50 border-b-4 border-gray-300 active:border-b-0 active:mt-1 rounded p-1 flex-col items-center justify-center h-14 transition-all ${showLiveMonitor ? 'border-green-400 bg-green-50' : ''}`}>
+                 <button onClick={() => setShowLiveMonitor(prev => !prev)} className={`hidden md:flex bg-white hover:bg-blue-50 border-b-4 border-gray-300 active:border-b-0 active:mt-1 rounded p-1 flex flex-col items-center justify-center h-14 transition-all ${showLiveMonitor ? 'border-green-400 bg-green-50' : ''}`}>
                      <span className="font-bold text-blue-800 text-xs bg-blue-100 px-2 rounded-full mb-1">F9</span>
                      <span className="text-xs text-gray-700 font-bold uppercase">Monitor</span>
                  </button>
@@ -824,7 +905,7 @@ const EmployeePOS: React.FC = () => {
 
             {/* Feature Modules */}
             <CustomerFaceCamera 
-                onIdentify={(c) => { setCurrentBill(prev => ({ ...prev, customerName: c.name, customerMobile: c.mobile })); }} 
+                onIdentify={(c) => { setCurrentBill(prev => ({ ...prev, customerName: c.name, customerMobile: c.mobile })); setActiveCustomer(c); }} 
                 isActive={showLiveMonitor} 
                 onClose={() => setShowLiveMonitor(false)}
             />

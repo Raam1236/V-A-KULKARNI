@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+
+import React, { useState, useRef, useEffect } from 'react';
 import { useAppContext } from '../../hooks/useAppContext';
 import { Customer, Sale } from '../../types';
 import database from '../../services/database';
@@ -15,6 +16,7 @@ const CustomerForm: React.FC<CustomerFormProps> = ({ customer, onSave, onCancel 
         mobile: customer?.mobile || '',
         email: customer?.email || '',
         loyaltyPoints: customer?.loyaltyPoints || 0,
+        walletBalance: customer?.walletBalance || 0
     });
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -35,13 +37,158 @@ const CustomerForm: React.FC<CustomerFormProps> = ({ customer, onSave, onCancel 
                     <input name="name" value={formData.name} onChange={handleChange} placeholder="Customer Name" className="w-full p-3 bg-background border border-on-surface/20 rounded-md text-on-surface" required />
                     <input name="mobile" value={formData.mobile} onChange={handleChange} placeholder="Mobile Number" className="w-full p-3 bg-background border border-on-surface/20 rounded-md text-on-surface" required />
                     <input name="email" type="email" value={formData.email} onChange={handleChange} placeholder="Email (Optional)" className="w-full p-3 bg-background border border-on-surface/20 rounded-md text-on-surface" />
-                    <input name="loyaltyPoints" type="number" value={formData.loyaltyPoints} onChange={handleChange} placeholder="Loyalty Points" className="w-full p-3 bg-background border border-on-surface/20 rounded-md text-on-surface" required />
+                    <div className="grid grid-cols-2 gap-4">
+                        <div>
+                            <label className="text-xs text-on-surface/70">Wallet Balance (₹)</label>
+                            <input name="walletBalance" type="number" value={formData.walletBalance} onChange={handleChange} placeholder="Wallet" className="w-full p-3 bg-background border border-on-surface/20 rounded-md text-on-surface" />
+                        </div>
+                    </div>
                     <div className="flex justify-end gap-4 pt-4">
                         <button type="button" onClick={onCancel} className="py-2 px-4 bg-on-surface/10 text-on-surface rounded-md hover:bg-on-surface/20 transition">Cancel</button>
                         <button type="submit" className="py-2 px-4 bg-primary text-on-primary rounded-md hover:bg-indigo-500 transition">Save</button>
                     </div>
                 </form>
             </div>
+        </div>
+    );
+};
+
+interface MembershipCardModalProps {
+    customer: Customer;
+    onClose: () => void;
+}
+
+const MembershipCardModal: React.FC<MembershipCardModalProps> = ({ customer, onClose }) => {
+    const cardRef = useRef<HTMLDivElement>(null);
+    const canvasRef = useRef<HTMLCanvasElement>(null);
+
+    useEffect(() => {
+        if ((window as any).QRCode && canvasRef.current) {
+             (window as any).QRCode.toCanvas(canvasRef.current, customer.id, {
+                width: 80,
+                margin: 0,
+                color: {
+                    dark: "#000000",
+                    light: "#ffffff"
+                }
+            }, (error: any) => {
+                if (error) console.error(error);
+            });
+        }
+    }, [customer]);
+
+    const handlePrint = () => {
+        const content = cardRef.current?.innerHTML;
+        if (content) {
+            const printWindow = window.open('', '', 'height=600,width=800');
+            if (printWindow) {
+                printWindow.document.write('<html><head><title>Print Membership Card</title>');
+                printWindow.document.write(`
+                    <style>
+                        @media print {
+                            body { margin: 0; padding: 20px; font-family: sans-serif; }
+                            .card {
+                                width: 350px;
+                                height: 200px;
+                                border-radius: 15px;
+                                background: linear-gradient(135deg, #FFD700 0%, #FDB931 50%, #B8860B 100%);
+                                color: #333;
+                                position: relative;
+                                overflow: hidden;
+                                box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+                                border: 1px solid #B8860B;
+                                padding: 20px;
+                                box-sizing: border-box;
+                                page-break-inside: avoid;
+                            }
+                            .shine {
+                                position: absolute;
+                                top: 0; left: 0; right: 0; bottom: 0;
+                                background: linear-gradient(rgba(255,255,255,0.3), transparent);
+                                pointer-events: none;
+                            }
+                            .header { display: flex; justify-content: space-between; align-items: flex-start; }
+                            .title { font-size: 14px; font-weight: bold; text-transform: uppercase; letter-spacing: 2px; color: #5c4002; }
+                            .chip {
+                                width: 40px; height: 30px;
+                                background: linear-gradient(135deg, #d4af37 0%, #a88825 100%);
+                                border-radius: 4px;
+                                border: 1px solid #8a6e1c;
+                                margin-top: 10px;
+                                position: relative;
+                            }
+                            .chip::before { content: ''; position: absolute; top: 50%; left: 0; right: 0; height: 1px; background: rgba(0,0,0,0.2); }
+                            .chip::after { content: ''; position: absolute; top: 0; bottom: 0; left: 33%; width: 33%; border-left: 1px solid rgba(0,0,0,0.2); border-right: 1px solid rgba(0,0,0,0.2); }
+                            .details { margin-top: 20px; }
+                            .name { font-size: 18px; font-weight: bold; text-transform: uppercase; margin-bottom: 5px; text-shadow: 0 1px 0 rgba(255,255,255,0.4); }
+                            .number { font-family: monospace; font-size: 16px; letter-spacing: 2px; }
+                            .footer { position: absolute; bottom: 20px; left: 20px; right: 20px; display: flex; justify-content: space-between; align-items: flex-end; }
+                            .balance { font-size: 12px; font-weight: bold; }
+                            .balance span { font-size: 16px; }
+                            .qr-box canvas { border-radius: 4px; border: 2px solid white; }
+                        }
+                    </style>
+                `);
+                printWindow.document.write('</head><body><div style="display:flex; justify-content:center;">');
+                printWindow.document.write(content);
+                printWindow.document.write('</div></body></html>');
+                printWindow.document.close();
+                printWindow.print();
+            }
+        }
+    };
+
+    return (
+        <div className="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-[60]" onClick={onClose}>
+             <div className="bg-surface p-6 rounded-lg shadow-2xl w-full max-w-lg flex flex-col items-center" onClick={e => e.stopPropagation()}>
+                 <h2 className="text-xl font-bold text-on-surface mb-4">Digital Membership Card</h2>
+                 
+                 {/* Visual Card */}
+                 <div ref={cardRef} className="mb-6">
+                     <div style={{
+                         width: '350px',
+                         height: '200px',
+                         borderRadius: '15px',
+                         background: 'linear-gradient(135deg, #FFD700 0%, #FDB931 50%, #B8860B 100%)',
+                         color: '#333',
+                         position: 'relative',
+                         overflow: 'hidden',
+                         boxShadow: '0 10px 20px rgba(0,0,0,0.3)',
+                         padding: '20px',
+                         boxSizing: 'border-box'
+                     }} className="card">
+                         <div className="shine" style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, background: 'linear-gradient(rgba(255,255,255,0.3), transparent)', pointerEvents: 'none' }}></div>
+                         
+                         <div className="header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                             <div>
+                                <div className="title" style={{ fontSize: '14px', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '2px', color: '#5c4002' }}>Gold Member</div>
+                                <div className="chip" style={{ width: '40px', height: '30px', background: 'linear-gradient(135deg, #d4af37 0%, #a88825 100%)', borderRadius: '4px', border: '1px solid #8a6e1c', marginTop: '10px', position: 'relative' }}></div>
+                             </div>
+                             <div className="qr-box">
+                                 <canvas ref={canvasRef} style={{ borderRadius: '4px', border: '2px solid white', width: '60px', height: '60px' }}></canvas>
+                             </div>
+                         </div>
+
+                         <div className="details" style={{ marginTop: '20px' }}>
+                             <div className="name" style={{ fontSize: '18px', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '5px', textShadow: '0 1px 0 rgba(255,255,255,0.4)' }}>{customer.name}</div>
+                             <div className="number" style={{ fontFamily: 'monospace', fontSize: '16px', letterSpacing: '2px' }}>{customer.mobile}</div>
+                         </div>
+
+                         <div className="footer" style={{ position: 'absolute', bottom: '20px', left: '20px', right: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+                             <div className="balance" style={{ fontSize: '12px', fontWeight: 'bold' }}>
+                                 WALLET BALANCE<br/>
+                                 <span style={{ fontSize: '16px' }}>₹{customer.walletBalance.toFixed(2)}</span>
+                             </div>
+                             <div style={{ fontSize: '10px', opacity: 0.8 }}>RG SHOP LOYALTY</div>
+                         </div>
+                     </div>
+                 </div>
+
+                 <div className="flex gap-4">
+                     <button onClick={onClose} className="py-2 px-6 bg-gray-200 text-gray-800 rounded-full font-bold">Close</button>
+                     <button onClick={handlePrint} className="py-2 px-6 bg-primary text-on-primary rounded-full font-bold shadow-lg hover:scale-105 transition-transform">Print Card</button>
+                 </div>
+             </div>
         </div>
     );
 };
@@ -86,6 +233,11 @@ const CustomerHistoryModal: React.FC<CustomerHistoryModalProps> = ({ customer, s
                                             ))}
                                         </ul>
                                     </div>
+                                    {(sale.walletUsed || 0) > 0 && (
+                                        <div className="mt-2 text-xs text-green-600 font-bold">
+                                            Wallet Redeemed: -₹{sale.walletUsed}
+                                        </div>
+                                    )}
                                 </div>
                             ))}
                         </div>
@@ -109,6 +261,7 @@ const CustomerManagement: React.FC = () => {
     const [isFormOpen, setIsFormOpen] = useState(false);
     const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
     const [historyCustomer, setHistoryCustomer] = useState<Customer | null>(null);
+    const [cardCustomer, setCardCustomer] = useState<Customer | null>(null);
 
     const handleSaveCustomer = async (customer: Customer) => {
         await database.saveCustomer(customer);
@@ -137,7 +290,7 @@ const CustomerManagement: React.FC = () => {
             return;
         }
 
-        const headers = ['ID', 'Name', 'Mobile', 'Email', 'Loyalty Points'];
+        const headers = ['ID', 'Name', 'Mobile', 'Email', 'Wallet Balance'];
         const csvRows = [headers.join(',')];
 
         const escapeCsvField = (field: any): string => {
@@ -154,7 +307,7 @@ const CustomerManagement: React.FC = () => {
                 escapeCsvField(customer.name),
                 escapeCsvField(customer.mobile),
                 escapeCsvField(customer.email),
-                escapeCsvField(customer.loyaltyPoints)
+                escapeCsvField(customer.walletBalance)
             ];
             csvRows.push(row.join(','));
         });
@@ -194,19 +347,18 @@ const CustomerManagement: React.FC = () => {
                         <tr>
                             <th className="p-4 text-on-surface font-semibold">Name</th>
                             <th className="p-4 text-on-surface font-semibold">Mobile</th>
-                            <th className="p-4 text-on-surface font-semibold">Email</th>
-                            <th className="p-4 text-on-surface font-semibold">Loyalty Points</th>
+                            <th className="p-4 text-on-surface font-semibold">Wallet (5% CB)</th>
                             <th className="p-4 text-on-surface font-semibold text-right">Actions</th>
                         </tr>
                     </thead>
                     <tbody>
                         {customers.map(customer => (
                             <tr key={customer.id} className="border-b border-on-surface/20 hover:bg-on-surface/5">
-                                <td className="p-4 text-on-surface">{customer.name}</td>
+                                <td className="p-4 text-on-surface font-medium">{customer.name}</td>
                                 <td className="p-4 text-on-surface">{customer.mobile}</td>
-                                <td className="p-4 text-on-surface">{customer.email || 'N/A'}</td>
-                                <td className="p-4 text-on-surface">{customer.loyaltyPoints}</td>
+                                <td className="p-4 text-on-surface font-bold text-green-600">₹{customer.walletBalance?.toFixed(2) || '0.00'}</td>
                                 <td className="p-4 text-right space-x-2">
+                                    <button onClick={() => setCardCustomer(customer)} className="p-2 text-on-surface/60 hover:text-yellow-500 transition" title="Membership Card"><CardIcon /></button>
                                     <button onClick={() => setHistoryCustomer(customer)} className="p-2 text-on-surface/60 hover:text-secondary transition" title="View Purchase History"><ClockIcon /></button>
                                     <button onClick={() => { setEditingCustomer(customer); setIsFormOpen(true); }} className="p-2 text-on-surface/60 hover:text-primary transition" title="Edit Customer"><PencilIcon /></button>
                                     <button onClick={() => handleDeleteCustomer(customer.id)} className="p-2 text-on-surface/60 hover:text-red-500 transition" title="Delete Customer"><TrashIcon /></button>
@@ -224,6 +376,7 @@ const CustomerManagement: React.FC = () => {
 
             {isFormOpen && <CustomerForm customer={editingCustomer} onSave={handleSaveCustomer} onCancel={() => setIsFormOpen(false)} />}
             {historyCustomer && <CustomerHistoryModal customer={historyCustomer} sales={sales} onClose={() => setHistoryCustomer(null)} />}
+            {cardCustomer && <MembershipCardModal customer={cardCustomer} onClose={() => setCardCustomer(null)} />}
         </div>
     );
 };
@@ -234,5 +387,6 @@ const PencilIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-5 
 const TrashIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm4 0a1 1 0 012 0v6a1 1 0 11-2 0V8z" clipRule="evenodd" /></svg>;
 const DownloadIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zM6.293 9.293a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clipRule="evenodd" /></svg>;
 const ClockIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd" /></svg>;
+const CardIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path d="M4 4a2 2 0 00-2 2v1h16V6a2 2 0 00-2-2H4z" /><path fillRule="evenodd" d="M18 9H2v5a2 2 0 002 2h12a2 2 0 002-2V9zM4 13a1 1 0 011-1h1a1 1 0 110 2H5a1 1 0 01-1-1zm5-1a1 1 0 100 2h1a1 1 0 100-2H9z" clipRule="evenodd" /></svg>;
 
 export default CustomerManagement;

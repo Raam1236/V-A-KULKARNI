@@ -171,6 +171,13 @@ class SQLiteSimulator {
         else customers.push(customer);
         this.saveTable('table_customers', customers);
     }
+    
+    // Helper to get raw customer by ID for wallet logic
+    get_customer_by_id(id: string): Customer | undefined {
+        const customers = this.getTable('table_customers');
+        return customers.find((c: any) => c.id === id);
+    }
+    
     delete_customer(id: string) {
         const customers = this.getTable('table_customers').filter((c: any) => c.id !== id);
         this.saveTable('table_customers', customers);
@@ -335,6 +342,13 @@ const database = {
               await sendPasswordResetEmail(auth, keyOrEmail);
               return { success: true, message: "Password reset email sent!" };
           } catch (e: any) {
+              console.error("Reset Password Error", e);
+              if (e.code === 'auth/api-key-not-valid' || e.message?.includes('api-key')) {
+                  return { success: false, message: "Configuration Error: Invalid API Key. Please update ERP Connection details." };
+              }
+              if (e.code === 'auth/user-not-found') {
+                  return { success: false, message: "No admin account found with this email." };
+              }
               return { success: false, message: e.message || "Failed to send reset email." };
           }
       } else {
@@ -371,6 +385,7 @@ const database = {
       if (isCloud && auth) await signOut(auth);
   },
 
+  // ... (rest of the file remains unchanged)
   // --- Products ---
   async getProducts(): Promise<Product[]> {
     if (isCloud && db) {
@@ -431,7 +446,9 @@ const database = {
               total: data.totalAmount,
               employeeId: data.generatedByEmployeeId,
               customerName: data.customerName,
-              customerMobile: data.customerMobile
+              customerMobile: data.customerMobile,
+              walletUsed: data.walletUsed,
+              walletCredited: data.walletCredited
           } as Sale;
       });
     } else {
@@ -440,6 +457,36 @@ const database = {
   },
 
   async addSale(sale: Sale): Promise<void> {
+    // Determine 5% Cashback
+    const cashback = Math.floor(sale.total * 0.05);
+    const saleWithCashback = { ...sale, walletCredited: cashback };
+
+    // Update Customer Wallet
+    const customerId = sale.customerMobile ? (await this.getCustomers()).find(c => c.mobile === sale.customerMobile)?.id : null;
+    
+    if (customerId) {
+        if (isCloud && db) {
+             const custRef = doc(db, "customers", customerId);
+             const custSnap = await getDoc(custRef);
+             if (custSnap.exists()) {
+                 const custData = custSnap.data();
+                 const currentWallet = custData.walletBalance || 0;
+                 const redeemed = sale.walletUsed || 0;
+                 const newBalance = currentWallet - redeemed + cashback;
+                 
+                 await setDoc(custRef, { walletBalance: newBalance }, { merge: true });
+             }
+        } else {
+            const customer = sqlite.get_customer_by_id(customerId);
+            if (customer) {
+                const currentWallet = customer.walletBalance || 0;
+                const redeemed = sale.walletUsed || 0;
+                customer.walletBalance = currentWallet - redeemed + cashback;
+                sqlite.save_customer(customer);
+            }
+        }
+    }
+
     if (isCloud && db) {
       const invoiceNumber = generateInvoiceNumber();
       const shopDetails = await this.getShopDetails();
@@ -452,6 +499,8 @@ const database = {
             productId: item.id, name: item.name, brand: item.brand, unitPrice: item.price, quantity: item.quantity, totalItemPrice: item.price * item.quantity
         })),
         totalAmount: sale.total,
+        walletUsed: sale.walletUsed || 0,
+        walletCredited: cashback,
         generatedByEmployeeId: sale.employeeId,
         shopDetails: shopDetails || { name: "RG Shop" },
         thankYouMessage: "THANK YOU ❣️",
@@ -459,7 +508,7 @@ const database = {
       };
       await setDoc(doc(db, "sales", sale.id), saleRecord);
     } else {
-      sqlite.add_sale(sale);
+      sqlite.add_sale(saleWithCashback);
     }
   },
 
