@@ -73,7 +73,13 @@ class SQLiteSimulator {
     check_login(username: string, password: string): User | null {
         const users = this.getTable('table_users');
         const user = users.find((u: any) => u.username === username && u.password === password);
-        if (user) return { id: user.id.toString(), username: user.username, role: (user.role as Role) || Role.EMPLOYEE };
+        if (user) return { 
+            id: user.id.toString(), 
+            username: user.username, 
+            role: (user.role as Role) || Role.EMPLOYEE,
+            fullName: user.fullName,
+            phone: user.phone 
+        };
         return null; 
     }
 
@@ -83,13 +89,26 @@ class SQLiteSimulator {
         if (existingIndex >= 0) {
             users[existingIndex] = { ...users[existingIndex], ...user, password: password || users[existingIndex].password };
         } else {
-            users.push({ id: users.length + 1, username: user.username, password: password || '1234', role: Role.EMPLOYEE });
+            users.push({ 
+                id: users.length + 1, 
+                username: user.username, 
+                password: password || '1234', 
+                role: Role.EMPLOYEE,
+                fullName: user.fullName,
+                phone: user.phone 
+            });
         }
         this.saveTable('table_users', users);
     }
 
     get_all_employees(): User[] {
-        return this.getTable('table_users').filter((u: any) => u.role === Role.EMPLOYEE).map((u: any) => ({ id: u.id.toString(), username: u.username, role: Role.EMPLOYEE }));
+        return this.getTable('table_users').filter((u: any) => u.role === Role.EMPLOYEE).map((u: any) => ({ 
+            id: u.id.toString(), 
+            username: u.username, 
+            role: Role.EMPLOYEE,
+            fullName: u.fullName,
+            phone: u.phone
+        }));
     }
     
     delete_user(userId: string) {
@@ -266,7 +285,13 @@ const database = {
         
         if (userDoc.exists()) {
           const userData = userDoc.data();
-          return { id: fbUser.uid, username: userData.username || userData.displayName || fbUser.email, role: userData.role as Role };
+          return { 
+              id: fbUser.uid, 
+              username: userData.username || userData.displayName || fbUser.email, 
+              role: userData.role as Role,
+              fullName: userData.fullName,
+              phone: userData.phone
+          };
         } else {
             return { id: fbUser.uid, username: fbUser.email?.split('@')[0] || 'User', role: Role.EMPLOYEE };
         }
@@ -286,7 +311,12 @@ const database = {
         const userCredential = await createUserWithEmailAndPassword(auth, email, password);
         const fbUser = userCredential.user;
         await setDoc(doc(db, "users", fbUser.uid), {
-          id: fbUser.uid, email: email, username: user.username, displayName: user.username, role: Role.ADMIN, createdAt: serverTimestamp()
+          id: fbUser.uid, 
+          email: email, 
+          username: user.username, 
+          displayName: user.username, 
+          role: Role.ADMIN, 
+          createdAt: serverTimestamp()
         });
         return true;
       } catch (error) {
@@ -458,7 +488,16 @@ const database = {
     if (isCloud && db) {
        const q = query(collection(db, "users"), where("role", "==", Role.EMPLOYEE));
        const querySnapshot = await getDocs(q);
-       return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as User));
+       return querySnapshot.docs.map(doc => {
+           const data = doc.data();
+           return { 
+               id: doc.id, 
+               username: data.username,
+               role: data.role,
+               fullName: data.fullName,
+               phone: data.phone
+           } as User;
+       });
     } else {
       return sqlite.get_all_employees();
     }

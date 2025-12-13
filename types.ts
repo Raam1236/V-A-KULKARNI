@@ -11,6 +11,8 @@ export interface User {
   username: string;
   password?: string; // Optional: In Cloud mode, we rely on Auth provider, not storing it locally/in-doc
   role: Role;
+  fullName?: string;
+  phone?: string;
 }
 
 export interface StockLogEntry {
