@@ -9,7 +9,7 @@ export enum Role {
 export interface User {
   id: string;
   username: string;
-  password?: string; // Optional: In Cloud mode, we rely on Auth provider, not storing it locally/in-doc
+  password?: string;
   role: Role;
   fullName?: string;
   phone?: string;
@@ -17,12 +17,12 @@ export interface User {
 
 export interface StockLogEntry {
   id: string;
-  date: string; // ISO string
-  change: number; // positive for addition, negative for removal
+  date: string;
+  change: number;
   previousStock: number;
   newStock: number;
-  reason: string; // e.g., "Restock", "Sale", "Correction", "Manual Update"
-  userId: string; // ID of the user who made the change
+  reason: string;
+  userId: string;
 }
 
 export interface Product {
@@ -30,7 +30,7 @@ export interface Product {
   name: string;
   brand: string;
   price: number;
-  expireDate: string; // YYYY-MM-DD
+  expireDate: string;
   stock: number;
   stockHistory?: StockLogEntry[];
 }
@@ -40,11 +40,17 @@ export interface Customer {
   name: string;
   mobile: string;
   email?: string;
-  loyaltyPoints: number; // Legacy points (optional)
-  walletBalance: number; // New 5% Cashback Wallet
-  photo?: string; // Base64 string of the customer's face
-  faceAttributes?: string; // AI description (e.g., "Male, approx 30s, glasses")
-  isVerified?: boolean; // True if OTP verified
+  loyaltyPoints: number;
+  walletBalance: number;
+  photo?: string;
+  faceAttributes?: string;
+  isVerified?: boolean; 
+  isPremium?: boolean;
+  // Security Fields
+  otpCode?: string;
+  otpExpiry?: number;
+  lastOtpSent?: number;
+  isSessionAuthenticated?: boolean; // Valid for current transaction only
 }
 
 export interface BillItem extends Product {
@@ -57,7 +63,7 @@ export interface BillItem extends Product {
 
 export interface Sale {
   id: string;
-  date: string; // ISO string
+  date: string;
   items: BillItem[];
   total: number;
   employeeId: string;
@@ -65,18 +71,17 @@ export interface Sale {
   customerMobile?: string;
   paymentMethod?: 'CASH' | 'UPI' | 'NET_BANKING';
   taxAmount?: number;
-  walletUsed?: number; // Amount redeemed from wallet
-  walletCredited?: number; // Amount added (5%)
+  walletUsed?: number;
+  walletCredited?: number;
 }
 
 export interface ShopDetails {
   name: string;
   address: string;
   contact: string;
-  // Payment & Tax
-  upiId?: string; // VPA for QR generation
+  upiId?: string;
   gstNumber?: string;
-  defaultGstRate?: number; // Percentage
+  defaultGstRate?: number;
   bankDetails?: {
     accountName: string;
     accountNumber: string;
@@ -97,8 +102,8 @@ export interface Bill {
     type: 'percentage' | 'fixed';
     value: number;
   };
-  walletRedeemed?: number; // Amount to be deducted from bill
-  customerId?: string; // Link to actual customer object
+  walletRedeemed?: number;
+  customerId?: string;
 }
 
 export interface AppContextType {

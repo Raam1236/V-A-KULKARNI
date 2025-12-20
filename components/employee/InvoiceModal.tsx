@@ -9,9 +9,11 @@ interface InvoiceModalProps {
 }
 
 const InvoiceModal: React.FC<InvoiceModalProps> = ({ bill, onNewBill }) => {
-    const { shopDetails, customers } = useAppContext();
+    const { shopDetails } = useAppContext();
     const invoiceRef = useRef<HTMLDivElement>(null);
-    const [qrStatus, setQrStatus] = useState("Generating...");
+    const [receiptQr, setReceiptQr] = useState<string>('');
+    const [paymentQr, setPaymentQr] = useState<string>('');
+    const [isGenerating, setIsGenerating] = useState(true);
 
     // Helper to ensure QR Lib is loaded
     const ensureQrLib = async (): Promise<any> => {
@@ -19,69 +21,59 @@ const InvoiceModal: React.FC<InvoiceModalProps> = ({ bill, onNewBill }) => {
         if ((window as any).qrcode) return (window as any).qrcode;
 
         return new Promise((resolve, reject) => {
-            console.log("Invoice Modal: QR Lib missing, attempting dynamic load...");
             const script = document.createElement('script');
-            // Use a reliable CDN fallback
             script.src = "https://cdnjs.cloudflare.com/ajax/libs/qrcode/1.5.1/qrcode.min.js";
             script.async = true;
-            script.onload = () => {
-                console.log("Invoice Modal: QR Lib loaded dynamically");
-                resolve((window as any).QRCode || (window as any).qrcode);
-            };
-            script.onerror = () => {
-                console.error("Invoice Modal: Dynamic QR Lib load failed");
-                reject(new Error("Failed to load QR library"));
-            };
+            script.onload = () => resolve((window as any).QRCode || (window as any).qrcode);
+            script.onerror = () => reject(new Error("Failed to load QR library"));
             document.body.appendChild(script);
         });
     };
 
-    // Use Callback Ref to ensure canvas is ready
-    const qrCanvasRef = useCallback((canvas: HTMLCanvasElement | null) => {
-        if (canvas !== null) {
-            
-            const generate = async () => {
-                try {
-                     const lib = await ensureQrLib();
-                     
-                     const digitalReceipt = {
-                        shop: shopDetails.name,
-                        date: new Date().toLocaleDateString(),
-                        total: bill.total,
-                        items: bill.items.map(i => ({n: i.name, p: i.price, q: i.quantity})),
-                        method: bill.paymentMethod
-                    };
-                    
-                    const receiptString = JSON.stringify(digitalReceipt);
-                    
-                    // Check if toCanvas exists (node-qrcode style)
-                    if (lib.toCanvas) {
-                        lib.toCanvas(canvas, receiptString, {
-                            width: 100,
-                            margin: 0,
-                            color: {
-                                dark: "#000000",
-                                light: "#ffffff"
-                            }
-                        }, (error: any) => {
-                            if(error) {
-                                 console.error(error);
-                                 setQrStatus("QR Error");
-                            } else {
-                                setQrStatus(""); // Clear text if success
-                            }
-                        });
-                    } else {
-                        setQrStatus("Legacy Mode");
-                    }
-                } catch (e) {
-                    console.error("QR Gen Error", e);
-                    setQrStatus("Lib Missing");
-                }
-            };
+    useEffect(() => {
+        const generateQRs = async () => {
+            try {
+                const lib = await ensureQrLib();
+                
+                // 1. Generate Receipt QR (Digital Data)
+                const digitalReceipt = {
+                    shop: shopDetails.name,
+                    date: new Date().toLocaleDateString(),
+                    total: bill.total,
+                    items: bill.items.map(i => ({n: i.name, p: i.price, q: i.quantity})),
+                    method: bill.paymentMethod
+                };
+                
+                const receiptData = await new Promise<string>((resolve, reject) => {
+                    lib.toDataURL(JSON.stringify(digitalReceipt), {
+                        width: 150,
+                        margin: 1,
+                        color: { dark: "#000000", light: "#ffffff" }
+                    }, (err: any, url: string) => err ? reject(err) : resolve(url));
+                });
+                setReceiptQr(receiptData);
 
-            generate();
-        }
+                // 2. Generate UPI Payment QR (if UPI ID exists)
+                if (shopDetails.upiId) {
+                    const upiString = `upi://pay?pa=${shopDetails.upiId}&pn=${encodeURIComponent(shopDetails.name)}&am=${bill.total.toFixed(2)}&cu=INR`;
+                    const paymentData = await new Promise<string>((resolve, reject) => {
+                        lib.toDataURL(upiString, {
+                            width: 200,
+                            margin: 1,
+                            color: { dark: "#000000", light: "#ffffff" }
+                        }, (err: any, url: string) => err ? reject(err) : resolve(url));
+                    });
+                    setPaymentQr(paymentData);
+                }
+                
+                setIsGenerating(false);
+            } catch (e) {
+                console.error("QR Generation Error", e);
+                setIsGenerating(false);
+            }
+        };
+
+        generateQRs();
     }, [bill, shopDetails]);
 
     const handlePrint = () => {
@@ -90,28 +82,45 @@ const InvoiceModal: React.FC<InvoiceModalProps> = ({ bill, onNewBill }) => {
             const printWindow = window.open('', '', 'height=600,width=800');
             if (printWindow) {
                 printWindow.document.write('<html><head><title>Print Receipt</title>');
-                printWindow.document.write('<style>body { font-family: "Courier New", monospace; text-align: center; margin: 0; padding: 20px; }</style>');
-                printWindow.document.write('</head><body>');
+                printWindow.document.write(`
+                    <style>
+                        body { font-family: "Courier New", monospace; text-align: center; margin: 0; padding: 10px; color: #000; }
+                        .receipt { max-width: 300px; margin: 0 auto; }
+                        table { width: 100%; border-collapse: collapse; }
+                        th, td { text-align: left; padding: 2px 0; }
+                        .text-right { text-align: right; }
+                        .border-dashed { border-bottom: 1px dashed #000; margin: 10px 0; }
+                        .qr-container { margin: 15px 0; display: flex; flex-direction: column; align-items: center; }
+                        .qr-image { width: 120px; height: 120px; display: block; }
+                        .payment-qr { width: 150px; height: 150px; }
+                        .bold { font-weight: bold; }
+                        .large { font-size: 1.2em; }
+                        @media print {
+                            body { padding: 0; }
+                            .no-print { display: none; }
+                        }
+                    </style>
+                `);
+                printWindow.document.write('</head><body><div class="receipt">');
                 printWindow.document.write(printContent);
-                printWindow.document.write('</body></html>');
+                printWindow.document.write('</div></body></html>');
                 printWindow.document.close();
-                printWindow.print();
+                // Delay print to ensure images are loaded in new window context
+                setTimeout(() => {
+                    printWindow.focus();
+                    printWindow.print();
+                    printWindow.close();
+                }, 500);
             }
         }
     };
     
-    // Calculate Earned Points (5%)
-    const pointsEarned = Math.floor(bill.total * 0.05);
-    // Determine new balance if customer exists
-    const customer = customers.find(c => c.mobile === bill.customerMobile);
-    const newWalletBalance = customer ? (customer.walletBalance) : 0; // Updated in DB already
-
     return (
         <div className="fixed inset-0 flex items-center justify-center z-[80] bg-black/70 backdrop-blur-sm p-4">
             <div className="bg-white rounded-lg shadow-2xl flex flex-col max-h-[90vh] w-full max-w-sm overflow-hidden animate-fade-in-up">
                 <div className="bg-green-600 p-4 text-white flex justify-between items-center">
-                    <h2 className="font-bold text-lg">Payment Successful</h2>
-                    <button onClick={onNewBill} className="text-white/80 hover:text-white">&times;</button>
+                    <h2 className="font-bold text-lg">Transaction Complete</h2>
+                    <button onClick={onNewBill} className="text-white/80 hover:text-white text-2xl leading-none">&times;</button>
                 </div>
                 
                 <div className="overflow-y-auto p-6 bg-gray-100 flex-1 flex justify-center">
@@ -179,32 +188,31 @@ const InvoiceModal: React.FC<InvoiceModalProps> = ({ bill, onNewBill }) => {
                             <span>₹{bill.total.toFixed(2)}</span>
                         </div>
 
-                        {/* Loyalty Section */}
-                        {bill.customerName !== 'Walk-in' && (
-                             <div className="border-t border-dashed border-gray-400 pt-2 mb-4 text-center">
-                                 <div className="font-bold mb-1">LOYALTY WALLET</div>
-                                 <div className="flex justify-between">
-                                     <span>Points Earned (5%):</span>
-                                     <span>+₹{pointsEarned}</span>
-                                 </div>
-                                 <div className="flex justify-between font-bold">
-                                     <span>New Balance:</span>
-                                     <span>₹{newWalletBalance.toFixed(2)}</span>
-                                 </div>
-                             </div>
-                        )}
-
+                        {/* Payment Method Badge */}
                         <div className="mb-4 text-center">
                             <span className="border border-black px-2 py-1 rounded font-bold uppercase">
                                 PAID VIA {bill.paymentMethod?.replace('_', ' ') || 'CASH'}
                             </span>
                         </div>
+
+                        {/* UPI Payment QR for Reference/Print */}
+                        {paymentQr && (
+                            <div className="qr-container">
+                                <img src={paymentQr} alt="UPI QR" className="qr-image payment-qr" />
+                                <div className="text-[10px] font-bold mt-1">SCAN TO PAY UPI</div>
+                                <div className="text-[8px] text-gray-500">{shopDetails.upiId}</div>
+                            </div>
+                        )}
                         
-                        <div className="flex flex-col items-center justify-center my-4 relative min-h-[100px]">
-                            <canvas ref={qrCanvasRef} className="p-1 bg-white"></canvas>
-                            {qrStatus && <div className="absolute inset-0 flex items-center justify-center text-[10px] text-gray-500">{qrStatus}</div>}
-                            <div className="text-[9px] mt-1 text-gray-500">SCAN FOR E-RECEIPT</div>
-                        </div>
+                        <div className="border-b border-dashed border-gray-400 my-2"></div>
+                        
+                        {/* Digital Receipt QR */}
+                        {receiptQr && (
+                            <div className="qr-container">
+                                <img src={receiptQr} alt="Receipt QR" className="qr-image" style={{ width: '80px', height: '80px' }} />
+                                <div className="text-[9px] mt-1 text-gray-500 uppercase tracking-tighter">Verified E-Receipt</div>
+                            </div>
+                        )}
                         
                         <div className="text-center font-bold text-sm mt-4">
                             THANK YOU ❣️
@@ -216,11 +224,15 @@ const InvoiceModal: React.FC<InvoiceModalProps> = ({ bill, onNewBill }) => {
                 </div>
 
                 <div className="p-4 bg-white border-t border-gray-100 flex gap-3">
-                    <button onClick={handlePrint} className="flex-1 py-3 bg-gray-800 text-white font-bold rounded-lg hover:bg-black transition-colors flex justify-center items-center gap-2">
-                        <span>🖨️</span> Print
+                    <button 
+                        onClick={handlePrint} 
+                        disabled={isGenerating}
+                        className="flex-1 py-3 bg-gray-800 text-white font-bold rounded-lg hover:bg-black transition-colors flex justify-center items-center gap-2 disabled:opacity-50"
+                    >
+                        <span>🖨️</span> {isGenerating ? 'Loading QR...' : 'Print Bill'}
                     </button>
                     <button onClick={onNewBill} className="flex-1 py-3 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-700 transition-colors">
-                        Next Bill
+                        Next Order
                     </button>
                 </div>
             </div>

@@ -16,12 +16,16 @@ const CustomerForm: React.FC<CustomerFormProps> = ({ customer, onSave, onCancel 
         mobile: customer?.mobile || '',
         email: customer?.email || '',
         loyaltyPoints: customer?.loyaltyPoints || 0,
-        walletBalance: customer?.walletBalance || 0
+        walletBalance: customer?.walletBalance || 0,
+        isPremium: customer?.isPremium || false
     });
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const { name, value, type } = e.target;
-        setFormData(prev => ({ ...prev, [name]: type === 'number' ? parseInt(value, 10) : value }));
+        const { name, value, type, checked } = e.target;
+        setFormData(prev => ({ 
+            ...prev, 
+            [name]: type === 'checkbox' ? checked : (type === 'number' ? parseInt(value, 10) : value) 
+        }));
     };
 
     const handleSubmit = (e: React.FormEvent) => {
@@ -37,15 +41,30 @@ const CustomerForm: React.FC<CustomerFormProps> = ({ customer, onSave, onCancel 
                     <input name="name" value={formData.name} onChange={handleChange} placeholder="Customer Name" className="w-full p-3 bg-background border border-on-surface/20 rounded-md text-on-surface" required />
                     <input name="mobile" value={formData.mobile} onChange={handleChange} placeholder="Mobile Number" className="w-full p-3 bg-background border border-on-surface/20 rounded-md text-on-surface" required />
                     <input name="email" type="email" value={formData.email} onChange={handleChange} placeholder="Email (Optional)" className="w-full p-3 bg-background border border-on-surface/20 rounded-md text-on-surface" />
-                    <div className="grid grid-cols-2 gap-4">
+                    
+                    <div className="flex items-center gap-2 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-md border border-blue-200 dark:border-blue-800">
+                        <input 
+                            type="checkbox" 
+                            id="isPremium" 
+                            name="isPremium" 
+                            checked={formData.isPremium} 
+                            onChange={handleChange}
+                            className="w-5 h-5 rounded border-gray-300 text-primary focus:ring-primary"
+                        />
+                        <label htmlFor="isPremium" className="text-sm font-bold text-blue-800 dark:text-blue-300 flex items-center gap-1">
+                            👑 Premium Customer (Gold Member)
+                        </label>
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-4">
                         <div>
-                            <label className="text-xs text-on-surface/70">Wallet Balance (₹)</label>
+                            <label className="text-xs text-on-surface/70 font-bold uppercase">Wallet Balance (₹)</label>
                             <input name="walletBalance" type="number" value={formData.walletBalance} onChange={handleChange} placeholder="Wallet" className="w-full p-3 bg-background border border-on-surface/20 rounded-md text-on-surface" />
                         </div>
                     </div>
                     <div className="flex justify-end gap-4 pt-4">
                         <button type="button" onClick={onCancel} className="py-2 px-4 bg-on-surface/10 text-on-surface rounded-md hover:bg-on-surface/20 transition">Cancel</button>
-                        <button type="submit" className="py-2 px-4 bg-primary text-on-primary rounded-md hover:bg-indigo-500 transition">Save</button>
+                        <button type="submit" className="py-2 px-4 bg-primary text-on-primary rounded-md hover:bg-indigo-500 transition">Save Customer</button>
                     </div>
                 </form>
             </div>
@@ -65,10 +84,10 @@ const MembershipCardModal: React.FC<MembershipCardModalProps> = ({ customer, onC
     useEffect(() => {
         if ((window as any).QRCode && canvasRef.current) {
              (window as any).QRCode.toCanvas(canvasRef.current, customer.id, {
-                width: 80,
+                width: 75,
                 margin: 0,
                 color: {
-                    dark: "#000000",
+                    dark: "#4a3504",
                     light: "#ffffff"
                 }
             }, (error: any) => {
@@ -86,50 +105,89 @@ const MembershipCardModal: React.FC<MembershipCardModalProps> = ({ customer, onC
                 printWindow.document.write(`
                     <style>
                         @media print {
-                            body { margin: 0; padding: 20px; font-family: sans-serif; }
+                            body { margin: 0; padding: 20px; font-family: "Segoe UI", Roboto, sans-serif; }
                             .card {
-                                width: 350px;
-                                height: 200px;
-                                border-radius: 15px;
-                                background: linear-gradient(135deg, #FFD700 0%, #FDB931 50%, #B8860B 100%);
-                                color: #333;
+                                width: 400px;
+                                height: 240px;
+                                border-radius: 20px;
+                                background: linear-gradient(145deg, #f8cc47 0%, #c38b0d 100%);
+                                color: #4a3504;
                                 position: relative;
                                 overflow: hidden;
-                                box-shadow: 0 4px 8px rgba(0,0,0,0.2);
-                                border: 1px solid #B8860B;
-                                padding: 20px;
+                                box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+                                padding: 25px;
                                 box-sizing: border-box;
                                 page-break-inside: avoid;
+                                border: 1px solid rgba(0,0,0,0.1);
                             }
                             .shine {
                                 position: absolute;
                                 top: 0; left: 0; right: 0; bottom: 0;
-                                background: linear-gradient(rgba(255,255,255,0.3), transparent);
+                                background: linear-gradient(135deg, rgba(255,255,255,0.4) 0%, transparent 50%, rgba(0,0,0,0.1) 100%);
                                 pointer-events: none;
                             }
-                            .header { display: flex; justify-content: space-between; align-items: flex-start; }
-                            .title { font-size: 14px; font-weight: bold; text-transform: uppercase; letter-spacing: 2px; color: #5c4002; }
-                            .chip {
-                                width: 40px; height: 30px;
-                                background: linear-gradient(135deg, #d4af37 0%, #a88825 100%);
-                                border-radius: 4px;
-                                border: 1px solid #8a6e1c;
-                                margin-top: 10px;
-                                position: relative;
+                            .title { 
+                                font-size: 18px; 
+                                font-weight: 800; 
+                                text-transform: uppercase; 
+                                letter-spacing: 4px; 
+                                opacity: 0.6;
+                                margin-bottom: 15px;
                             }
-                            .chip::before { content: ''; position: absolute; top: 50%; left: 0; right: 0; height: 1px; background: rgba(0,0,0,0.2); }
-                            .chip::after { content: ''; position: absolute; top: 0; bottom: 0; left: 33%; width: 33%; border-left: 1px solid rgba(0,0,0,0.2); border-right: 1px solid rgba(0,0,0,0.2); }
-                            .details { margin-top: 20px; }
-                            .name { font-size: 18px; font-weight: bold; text-transform: uppercase; margin-bottom: 5px; text-shadow: 0 1px 0 rgba(255,255,255,0.4); }
-                            .number { font-family: monospace; font-size: 16px; letter-spacing: 2px; }
-                            .footer { position: absolute; bottom: 20px; left: 20px; right: 20px; display: flex; justify-content: space-between; align-items: flex-end; }
-                            .balance { font-size: 12px; font-weight: bold; }
-                            .balance span { font-size: 16px; }
-                            .qr-box canvas { border-radius: 4px; border: 2px solid white; }
+                            .chip {
+                                width: 45px;
+                                height: 35px;
+                                background: linear-gradient(135deg, #d4af37, #8a6d3b);
+                                border-radius: 6px;
+                                position: relative;
+                                border: 1px solid rgba(0,0,0,0.2);
+                                margin-bottom: 25px;
+                            }
+                            .chip::after {
+                                content: '';
+                                position: absolute;
+                                top: 50%; left: 0; right: 0; height: 1px; background: rgba(0,0,0,0.2);
+                            }
+                            .name { 
+                                font-size: 24px; 
+                                font-weight: 900; 
+                                text-transform: uppercase; 
+                                margin-top: 10px;
+                            }
+                            .number { 
+                                font-family: "Courier New", monospace; 
+                                font-size: 18px; 
+                                letter-spacing: 3px; 
+                                margin-bottom: 10px;
+                            }
+                            .qr-box {
+                                position: absolute;
+                                top: 25px;
+                                right: 25px;
+                                background: white;
+                                padding: 5px;
+                                border-radius: 10px;
+                                width: 85px;
+                                height: 85px;
+                                display: flex;
+                                items-center;
+                                justify-content: center;
+                                border: 2px solid rgba(255,255,255,0.5);
+                            }
+                            .footer-brand {
+                                position: absolute;
+                                bottom: 25px;
+                                right: 25px;
+                                font-size: 12px;
+                                font-weight: 800;
+                                text-transform: uppercase;
+                                letter-spacing: 1px;
+                                opacity: 0.7;
+                            }
                         }
                     </style>
                 `);
-                printWindow.document.write('</head><body><div style="display:flex; justify-content:center;">');
+                printWindow.document.write('</head><body><div style="display:flex; justify-content:center; padding-top: 50px;">');
                 printWindow.document.write(content);
                 printWindow.document.write('</div></body></html>');
                 printWindow.document.close();
@@ -140,53 +198,57 @@ const MembershipCardModal: React.FC<MembershipCardModalProps> = ({ customer, onC
 
     return (
         <div className="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-[60]" onClick={onClose}>
-             <div className="bg-surface p-6 rounded-lg shadow-2xl w-full max-w-lg flex flex-col items-center" onClick={e => e.stopPropagation()}>
-                 <h2 className="text-xl font-bold text-on-surface mb-4">Digital Membership Card</h2>
+             <div className="bg-surface p-8 rounded-2xl shadow-2xl w-full max-w-xl flex flex-col items-center" onClick={e => e.stopPropagation()}>
+                 <h2 className="text-xl font-bold text-on-surface mb-6">Gold Membership Preview</h2>
                  
-                 {/* Visual Card */}
-                 <div ref={cardRef} className="mb-6">
+                 {/* Visual Card - Wallet Balance Removed for Premium Customer Privacy on Card */}
+                 <div ref={cardRef} className="mb-8">
                      <div style={{
-                         width: '350px',
-                         height: '200px',
-                         borderRadius: '15px',
-                         background: 'linear-gradient(135deg, #FFD700 0%, #FDB931 50%, #B8860B 100%)',
-                         color: '#333',
+                         width: '400px',
+                         height: '240px',
+                         borderRadius: '20px',
+                         background: customer.isPremium ? 'linear-gradient(145deg, #f8cc47 0%, #c38b0d 100%)' : 'linear-gradient(135deg, #e2e8f0 0%, #94a3b8 100%)',
+                         color: customer.isPremium ? '#4a3504' : '#1e293b',
                          position: 'relative',
                          overflow: 'hidden',
-                         boxShadow: '0 10px 20px rgba(0,0,0,0.3)',
-                         padding: '20px',
-                         boxSizing: 'border-box'
+                         boxShadow: '0 20px 40px rgba(0,0,0,0.4)',
+                         padding: '25px',
+                         boxSizing: 'border-box',
+                         border: '1px solid rgba(255,255,255,0.2)'
                      }} className="card">
-                         <div className="shine" style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, background: 'linear-gradient(rgba(255,255,255,0.3), transparent)', pointerEvents: 'none' }}></div>
+                         <div className="shine" style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, background: 'linear-gradient(135deg, rgba(255,255,255,0.4) 0%, transparent 50%, rgba(0,0,0,0.1) 100%)', pointerEvents: 'none' }}></div>
                          
-                         <div className="header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                             <div>
-                                <div className="title" style={{ fontSize: '14px', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '2px', color: '#5c4002' }}>Gold Member</div>
-                                <div className="chip" style={{ width: '40px', height: '30px', background: 'linear-gradient(135deg, #d4af37 0%, #a88825 100%)', borderRadius: '4px', border: '1px solid #8a6e1c', marginTop: '10px', position: 'relative' }}></div>
-                             </div>
-                             <div className="qr-box">
-                                 <canvas ref={canvasRef} style={{ borderRadius: '4px', border: '2px solid white', width: '60px', height: '60px' }}></canvas>
-                             </div>
+                         <div className="title" style={{ fontSize: '18px', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '4px', opacity: 0.6, marginBottom: '15px' }}>
+                             {customer.isPremium ? 'GOLD MEMBER' : 'STORE MEMBER'}
+                         </div>
+
+                         {/* Sim Chip Icon */}
+                         <div className="chip" style={{ width: '45px', height: '35px', background: 'linear-gradient(135deg, #d4af37, #8a6d3b)', borderRadius: '6px', position: 'relative', border: '1px solid rgba(0,0,0,0.2)', marginBottom: '25px' }}>
+                             <div style={{ position: 'absolute', top: '50%', left: 0, right: 0, height: '1px', background: 'rgba(0,0,0,0.2)' }}></div>
+                             <div style={{ position: 'absolute', left: '50%', top: 0, bottom: 0, width: '1px', background: 'rgba(0,0,0,0.2)' }}></div>
                          </div>
 
                          <div className="details" style={{ marginTop: '20px' }}>
-                             <div className="name" style={{ fontSize: '18px', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '5px', textShadow: '0 1px 0 rgba(255,255,255,0.4)' }}>{customer.name}</div>
-                             <div className="number" style={{ fontFamily: 'monospace', fontSize: '16px', letterSpacing: '2px' }}>{customer.mobile}</div>
+                             <div className="name" style={{ fontSize: '24px', fontWeight: '900', textTransform: 'uppercase', lineHeight: '1.2' }}>{customer.name}</div>
+                             <div className="number" style={{ fontFamily: 'monospace', fontSize: '18px', letterSpacing: '3px', marginTop: '8px', opacity: 0.8 }}>{customer.mobile}</div>
                          </div>
 
-                         <div className="footer" style={{ position: 'absolute', bottom: '20px', left: '20px', right: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
-                             <div className="balance" style={{ fontSize: '12px', fontWeight: 'bold' }}>
-                                 WALLET BALANCE<br/>
-                                 <span style={{ fontSize: '16px' }}>₹{customer.walletBalance.toFixed(2)}</span>
-                             </div>
-                             <div style={{ fontSize: '10px', opacity: 0.8 }}>RG SHOP LOYALTY</div>
+                         {/* QR Code Container Top Right */}
+                         <div className="qr-box" style={{ position: 'absolute', top: '25px', right: '25px', background: 'white', padding: '5px', borderRadius: '10px', width: '85px', height: '85px', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '2px solid rgba(255,255,255,0.5)' }}>
+                             <canvas ref={canvasRef} style={{ width: '75px', height: '75px' }}></canvas>
+                         </div>
+
+                         <div className="footer-brand" style={{ position: 'absolute', bottom: '25px', right: '25px', fontSize: '12px', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '1px', opacity: 0.7 }}>
+                             RG SHOP LOYALTY
                          </div>
                      </div>
                  </div>
 
-                 <div className="flex gap-4">
-                     <button onClick={onClose} className="py-2 px-6 bg-gray-200 text-gray-800 rounded-full font-bold">Close</button>
-                     <button onClick={handlePrint} className="py-2 px-6 bg-primary text-on-primary rounded-full font-bold shadow-lg hover:scale-105 transition-transform">Print Card</button>
+                 <div className="flex gap-4 w-full">
+                     <button onClick={onClose} className="flex-1 py-3 px-6 bg-gray-100 text-gray-600 rounded-xl font-bold hover:bg-gray-200 transition-colors">Dismiss</button>
+                     <button onClick={handlePrint} className="flex-[2] py-3 px-6 bg-yellow-600 text-white rounded-xl font-bold shadow-lg hover:bg-yellow-700 transition-all flex items-center justify-center gap-2">
+                         <span>🖨️</span> Print Premium Card
+                     </button>
                  </div>
              </div>
         </div>
@@ -290,7 +352,7 @@ const CustomerManagement: React.FC = () => {
             return;
         }
 
-        const headers = ['ID', 'Name', 'Mobile', 'Email', 'Wallet Balance'];
+        const headers = ['ID', 'Name', 'Mobile', 'Email', 'Wallet Balance', 'Premium'];
         const csvRows = [headers.join(',')];
 
         const escapeCsvField = (field: any): string => {
@@ -307,7 +369,8 @@ const CustomerManagement: React.FC = () => {
                 escapeCsvField(customer.name),
                 escapeCsvField(customer.mobile),
                 escapeCsvField(customer.email),
-                escapeCsvField(customer.walletBalance)
+                escapeCsvField(customer.walletBalance),
+                escapeCsvField(customer.isPremium ? 'YES' : 'NO')
             ];
             csvRows.push(row.join(','));
         });
@@ -347,6 +410,7 @@ const CustomerManagement: React.FC = () => {
                         <tr>
                             <th className="p-4 text-on-surface font-semibold">Name</th>
                             <th className="p-4 text-on-surface font-semibold">Mobile</th>
+                            <th className="p-4 text-on-surface font-semibold text-center">Status</th>
                             <th className="p-4 text-on-surface font-semibold">Wallet (5% CB)</th>
                             <th className="p-4 text-on-surface font-semibold text-right">Actions</th>
                         </tr>
@@ -354,8 +418,18 @@ const CustomerManagement: React.FC = () => {
                     <tbody>
                         {customers.map(customer => (
                             <tr key={customer.id} className="border-b border-on-surface/20 hover:bg-on-surface/5">
-                                <td className="p-4 text-on-surface font-medium">{customer.name}</td>
+                                <td className="p-4 text-on-surface font-medium flex items-center gap-2">
+                                    {customer.isPremium && <span title="Premium Member">👑</span>}
+                                    {customer.name}
+                                </td>
                                 <td className="p-4 text-on-surface">{customer.mobile}</td>
+                                <td className="p-4 text-center">
+                                    {customer.isPremium ? (
+                                        <span className="px-2 py-1 bg-yellow-100 text-yellow-800 text-[10px] font-bold rounded-full border border-yellow-200">GOLD MEMBER</span>
+                                    ) : (
+                                        <span className="px-2 py-1 bg-gray-100 text-gray-500 text-[10px] rounded-full">REGULAR</span>
+                                    )}
+                                </td>
                                 <td className="p-4 text-on-surface font-bold text-green-600">₹{customer.walletBalance?.toFixed(2) || '0.00'}</td>
                                 <td className="p-4 text-right space-x-2">
                                     <button onClick={() => setCardCustomer(customer)} className="p-2 text-on-surface/60 hover:text-yellow-500 transition" title="Membership Card"><CardIcon /></button>

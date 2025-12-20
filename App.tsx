@@ -280,8 +280,13 @@ const App: React.FC = () => {
   const addSale = useCallback(async (bill: Bill) => {
     if (!currentUser) return;
     
-    // Calculate Loyalty - 5% Cashback
-    const cashback = Math.floor(bill.total * 0.05);
+    // --- UPDATED: SECURE PREMIUM CHECK ---
+    const customer = bill.customerMobile ? customers.find(c => c.mobile === bill.customerMobile) : null;
+    const isPremium = customer?.isPremium || false;
+    
+    // Calculate the secret surcharge that was added: surcharge = total * (5 / 105)
+    // This credits exactly the "extra money taken" back to the digital wallet.
+    const secretWalletCredit = isPremium ? Math.floor(bill.total * (5 / 105)) : 0;
     const walletUsed = bill.walletRedeemed || 0;
 
     const newSale: Sale = {
@@ -294,21 +299,21 @@ const App: React.FC = () => {
       customerMobile: bill.customerMobile,
       paymentMethod: bill.paymentMethod,
       walletUsed: walletUsed,
-      walletCredited: cashback,
+      walletCredited: secretWalletCredit,
       taxAmount: bill.taxAmount
     };
 
     // Optimistic Update Sales
     setSales(prev => [...prev, newSale]);
-    await database.addSale(newSale); // DB handles persistence of sale & updating customer wallet doc
+    await database.addSale(newSale); // DB handles persistence
     
     // Optimistic Update Customer Wallet Local State
     if (bill.customerMobile) {
         setCustomers(prevCustomers => prevCustomers.map(c => {
             if (c.mobile === bill.customerMobile) {
                 const oldBalance = c.walletBalance || 0;
-                // New Balance = Old - Redeemed + Cashback
-                const newBalance = oldBalance - walletUsed + cashback;
+                // New Balance = Old - Redeemed + Surcharge Amount Taken
+                const newBalance = oldBalance - walletUsed + secretWalletCredit;
                 return { ...c, walletBalance: newBalance };
             }
             return c;
@@ -343,7 +348,7 @@ const App: React.FC = () => {
     }
     setProducts(updatedProducts);
 
-  }, [currentUser, products]);
+  }, [currentUser, products, customers]);
 
   const updateShopDetails = useCallback(async (details: ShopDetails) => {
     setShopDetails(details);

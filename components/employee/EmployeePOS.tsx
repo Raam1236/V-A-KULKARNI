@@ -7,7 +7,9 @@ import QRScannerModal from './QRScannerModal';
 import VisualScannerModal from './VisualScannerModal';
 import CustomerFaceCamera from './CustomerFaceCamera';
 import MarketNews from './MarketNews';
+import OTPVerificationModal from './OTPVerificationModal';
 import { processVoiceCommand, analyzeImageForBilling, getSmartUpsellSuggestion } from '../../services/geminiService';
+import { generateOTP, sendSmsOTP } from '../../services/otpService';
 
 // --- PAYMENT MODAL COMPONENT ---
 interface PaymentModalProps {
@@ -23,78 +25,50 @@ const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, bill, onCo
     const [method, setMethod] = useState<'CASH' | 'UPI' | 'NET_BANKING'>('CASH');
     const [qrError, setQrError] = useState<string | null>(null);
 
-    // Helper to ensure QR Lib is loaded
     const ensureQrLib = async (): Promise<any> => {
         if ((window as any).QRCode) return (window as any).QRCode;
         if ((window as any).qrcode) return (window as any).qrcode;
 
         return new Promise((resolve, reject) => {
-            console.log("QR Lib missing, attempting dynamic load...");
             const script = document.createElement('script');
-            // Use a reliable CDN fallback
             script.src = "https://cdnjs.cloudflare.com/ajax/libs/qrcode/1.5.1/qrcode.min.js";
             script.async = true;
-            script.onload = () => {
-                console.log("QR Lib loaded dynamically");
-                resolve((window as any).QRCode || (window as any).qrcode);
-            };
-            script.onerror = () => {
-                console.error("Dynamic QR Lib load failed");
-                reject(new Error("Failed to load QR library"));
-            };
+            script.onload = () => resolve((window as any).QRCode || (window as any).qrcode);
+            script.onerror = () => reject(new Error("Failed to load QR library"));
             document.body.appendChild(script);
         });
     };
 
-    // Use Callback Ref to ensure canvas exists before drawing
     const qrCanvasRef = useCallback((node: HTMLCanvasElement | null) => {
         if (node !== null && method === 'UPI' && upiId) {
             setQrError("Initializing QR...");
-            
             const startGeneration = async () => {
                 try {
                     const lib = await ensureQrLib();
                     if (!lib) throw new Error("Library not found");
                     generate(node, lib);
                 } catch (e) {
-                    console.error(e);
                     setQrError("QR Library Failed to Load. Check Internet.");
                 }
             };
-
             startGeneration();
         }
     }, [method, upiId, bill.total, shopName]);
 
     const generate = (canvas: HTMLCanvasElement, lib: any) => {
         try {
-             // UPI String Format: upi://pay?pa=UPI_ID&pn=NAME&am=AMOUNT&cu=INR
              const upiString = `upi://pay?pa=${upiId}&pn=${encodeURIComponent(shopName)}&am=${bill.total.toFixed(2)}&cu=INR`;
-             
-             // Check if toCanvas exists (node-qrcode style)
              if (lib.toCanvas) {
                  lib.toCanvas(canvas, upiString, {
-                     width: 200,
-                     margin: 2,
-                     color: {
-                         dark: "#000000",
-                         light: "#ffffff"
-                     },
-                     errorCorrectionLevel: 'M'
+                     width: 200, margin: 2, color: { dark: "#000000", light: "#ffffff" }, errorCorrectionLevel: 'M'
                  }, (error: any) => {
-                     if (error) {
-                         console.error("QR Gen Error:", error);
-                         setQrError("Failed to generate QR");
-                     } else {
-                         setQrError(null);
-                     }
+                     if (error) setQrError("Failed to generate QR");
+                     else setQrError(null);
                  });
              } else {
-                 console.warn("Using fallback QR generation or incompatible lib");
                  setQrError("Incompatible QR Lib");
              }
         } catch (e) {
-             console.error("QR Logic Error:", e);
              setQrError("Error creating QR code");
         }
     };
@@ -111,7 +85,6 @@ const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, bill, onCo
                 
                 <div className="p-6">
                     <div className="grid grid-cols-3 gap-3 mb-6">
-                        {/* UPDATED: Cash button now immediately confirms the payment for speed */}
                         <button onClick={() => onConfirm('CASH')} className={`p-3 rounded-lg border-2 flex flex-col items-center gap-1 transition-all border-green-600 bg-green-50 text-green-700 hover:bg-green-100 hover:shadow-lg transform hover:scale-105 active:scale-95`}>
                             <span className="text-2xl">💵</span>
                             <span className="text-xs font-bold">CASH (Direct)</span>
@@ -189,20 +162,15 @@ interface DiscountModalProps {
 const DiscountModal: React.FC<DiscountModalProps> = ({ isOpen, onClose, onApply, itemName }) => {
     const [type, setType] = useState<'percentage' | 'fixed'>('percentage');
     const [value, setValue] = useState<number | ''>('');
-
     if (!isOpen) return null;
-
     const handleApply = () => {
-        if (typeof value === 'number' && value >= 0) {
-            onApply({ type, value });
-        }
+        if (typeof value === 'number' && value >= 0) onApply({ type, value });
     };
 
     return (
         <div className="fixed inset-0 flex items-center justify-center z-[60] bg-black/50 backdrop-blur-sm">
             <div className="bg-white rounded-lg shadow-2xl p-6 w-80 animate-fade-in-up border border-blue-200">
                 <h3 className="text-lg font-bold text-blue-900 mb-4">Discount: {itemName}</h3>
-                
                 <div className="flex gap-2 mb-4">
                     <label className={`flex-1 p-2 text-center rounded cursor-pointer border ${type === 'percentage' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-700 border-gray-300'}`}>
                         <input type="radio" name="discount-type" value="percentage" checked={type === 'percentage'} onChange={() => setType('percentage')} className="hidden" />
@@ -213,20 +181,9 @@ const DiscountModal: React.FC<DiscountModalProps> = ({ isOpen, onClose, onApply,
                         ₹ Fixed
                     </label>
                 </div>
-                
-                <input
-                    type="number"
-                    value={value}
-                    onChange={(e) => setValue(e.target.value === '' ? '' : parseFloat(e.target.value))}
-                    className="w-full p-2 border border-blue-300 rounded text-lg mb-4 focus:ring-2 focus:ring-blue-500 outline-none"
-                    placeholder="Enter value"
-                    autoFocus
-                />
-
+                <input type="number" value={value} onChange={(e) => setValue(e.target.value === '' ? '' : parseFloat(e.target.value))} className="w-full p-2 border border-blue-300 rounded text-lg mb-4 focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Enter value" autoFocus />
                 <div className="flex justify-end gap-2">
-                     <button onClick={() => onApply({ type: 'fixed', value: -1 })} className="px-3 py-1 text-red-600 text-sm hover:bg-red-50 rounded">
-                        Remove
-                    </button>
+                    <button onClick={() => onApply({ type: 'fixed', value: -1 })} className="px-3 py-1 text-red-600 text-sm hover:bg-red-50 rounded">Remove</button>
                     <button onClick={onClose} className="px-3 py-1 text-gray-600 hover:bg-gray-100 rounded">Cancel</button>
                     <button onClick={handleApply} className="px-4 py-1 bg-blue-600 text-white font-bold rounded hover:bg-blue-700">Apply</button>
                 </div>
@@ -236,7 +193,7 @@ const DiscountModal: React.FC<DiscountModalProps> = ({ isOpen, onClose, onApply,
 };
 
 const EmployeePOS: React.FC = () => {
-    const { logout, products, customers, addSale, showToast, currentUser, shopDetails } = useAppContext();
+    const { logout, products, customers, setCustomers, addSale, showToast, currentUser, shopDetails } = useAppContext();
     const [currentBill, setCurrentBill] = useState<Bill>({ customerName: 'Walk-in', customerMobile: '', items: [], subtotal: 0, taxAmount: 0, total: 0 });
     const [searchTerm, setSearchTerm] = useState('');
     const [invoiceReady, setInvoiceReady] = useState<Bill | null>(null);
@@ -246,32 +203,27 @@ const EmployeePOS: React.FC = () => {
     const [discountModal, setDiscountModal] = useState<{ isOpen: boolean; target: string | 'bill'; itemName: string } | null>(null);
     const [paymentModalOpen, setPaymentModalOpen] = useState(false);
     const [isScannerOpen, setIsScannerOpen] = useState(false);
+    const [isOtpModalOpen, setIsOtpModalOpen] = useState(false);
     
     // Feature States
     const [selectedResultIndex, setSelectedResultIndex] = useState(0);
     const [showLiveMonitor, setShowLiveMonitor] = useState(false);
     const [showVisualScanner, setShowVisualScanner] = useState(false);
-    
-    // Voice Command State & Ref
     const [isVoiceListening, setIsVoiceListening] = useState(false);
-    const recognitionRef = useRef<any>(null); // Store recognition instance
-
+    const recognitionRef = useRef<any>(null);
     const [upsellSuggestion, setUpsellSuggestion] = useState<string | null>(null);
     const [isProcessingVoice, setIsProcessingVoice] = useState(false);
-    
     const searchInputRef = useRef<HTMLInputElement>(null);
     
     // Wallet State
     const [activeCustomer, setActiveCustomer] = useState<Customer | null>(null);
+    const [isWalletUnlocked, setIsWalletUnlocked] = useState(false);
 
     useEffect(() => {
         audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
-        // Cleanup recognition on unmount
         return () => { 
             audioContextRef.current?.close(); 
-            if (recognitionRef.current) {
-                recognitionRef.current.abort();
-            }
+            if (recognitionRef.current) recognitionRef.current.abort();
         };
     }, []);
 
@@ -289,6 +241,36 @@ const EmployeePOS: React.FC = () => {
         ).slice(0, 10);
     }, [products, searchTerm]);
 
+    // Resets the billing state for a new transaction
+    const resetBillingState = useCallback(() => {
+        setCurrentBill({ 
+            customerName: 'Walk-in', 
+            customerMobile: '', 
+            items: [], 
+            subtotal: 0, 
+            taxAmount: 0, 
+            total: 0 
+        });
+        setSearchTerm('');
+        setActiveCustomer(null);
+        setIsWalletUnlocked(false);
+        setUpsellSuggestion(null);
+    }, []);
+
+    const handleManualClear = useCallback(() => {
+        // Condition: items are added, or customer info is entered
+        const isDirty = currentBill.items.length > 0 || 
+                        currentBill.customerMobile !== '' || 
+                        currentBill.customerName !== 'Walk-in';
+        
+        if (!isDirty) return;
+
+        if (window.confirm("Are you sure you want to clear this bill?")) {
+            resetBillingState();
+            showToast("Bill reset successfully.");
+        }
+    }, [currentBill, resetBillingState, showToast]);
+
     // Keyboard Shortcuts
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
@@ -296,40 +278,30 @@ const EmployeePOS: React.FC = () => {
             if (e.key === 'F2') { e.preventDefault(); setIsScannerOpen(true); }
             if (e.key === 'F3') { e.preventDefault(); toggleVoiceListening(); }
             if (e.key === 'F4') { e.preventDefault(); setShowVisualScanner(true); }
-            if (e.key === 'F8') { e.preventDefault(); handleClearBill(); }
+            if (e.key === 'F8') { e.preventDefault(); handleManualClear(); }
             if (e.key === 'F9') { e.preventDefault(); setShowLiveMonitor(prev => !prev); }
-            
-            // Checkout
             if (e.key === 'NumpadAdd' || (e.key === '+' && document.activeElement?.tagName !== 'INPUT')) {
-                e.preventDefault(); 
-                handleCheckout(); 
+                e.preventDefault(); handleCheckout(); 
             }
             if (e.key === 'Escape') {
                 if (isScannerOpen) setIsScannerOpen(false);
                 else if (paymentModalOpen) setPaymentModalOpen(false);
                 else searchInputRef.current?.focus();
             }
-            
-            // Search Grid Navigation
             if (document.activeElement === searchInputRef.current && searchTerm) {
                 if (e.key === 'ArrowDown') {
-                    e.preventDefault();
-                    setSelectedResultIndex(prev => Math.min(prev + 1, filteredProducts.length - 1));
+                    e.preventDefault(); setSelectedResultIndex(prev => Math.min(prev + 1, filteredProducts.length - 1));
                 } else if (e.key === 'ArrowUp') {
-                    e.preventDefault();
-                    setSelectedResultIndex(prev => Math.max(prev - 1, 0));
+                    e.preventDefault(); setSelectedResultIndex(prev => Math.max(prev - 1, 0));
                 } else if (e.key === 'Enter') {
                     e.preventDefault();
-                    if (filteredProducts.length > 0) {
-                        addToBill(filteredProducts[selectedResultIndex]);
-                        setSearchTerm('');
-                    }
+                    if (filteredProducts.length > 0) { addToBill(filteredProducts[selectedResultIndex]); setSearchTerm(''); }
                 }
             }
         };
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [searchTerm, selectedResultIndex, filteredProducts, isScannerOpen, currentBill, paymentModalOpen]);
+    }, [searchTerm, selectedResultIndex, filteredProducts, isScannerOpen, currentBill, paymentModalOpen, handleManualClear]);
 
     // Upsell Logic
     useEffect(() => {
@@ -338,9 +310,7 @@ const EmployeePOS: React.FC = () => {
                 const itemNames = currentBill.items.map(i => i.name);
                 const suggestion = await getSmartUpsellSuggestion(itemNames);
                 setUpsellSuggestion(suggestion);
-            } else {
-                setUpsellSuggestion(null);
-            }
+            } else setUpsellSuggestion(null);
         }, 600);
         return () => clearTimeout(timer);
     }, [currentBill.items]);
@@ -351,11 +321,11 @@ const EmployeePOS: React.FC = () => {
             const found = customers.find(c => c.mobile === currentBill.customerMobile);
             if (found) {
                 setActiveCustomer(found);
-            } else {
-                setActiveCustomer(null);
-            }
+                setIsWalletUnlocked(false); // Reset lock for new customer
+            } else setActiveCustomer(null);
         } else {
             setActiveCustomer(null);
+            setIsWalletUnlocked(false);
         }
     }, [currentBill.customerMobile, customers]);
 
@@ -374,32 +344,15 @@ const EmployeePOS: React.FC = () => {
     };
 
     const addToBill = (product: Product, quantity = 1, discount?: { type: 'percentage' | 'fixed'; value: number }) => {
-        if (product.stock < quantity) {
-            showToast(`Stock Low: ${product.name}`, 'error');
-        }
-
+        if (product.stock < quantity) showToast(`Stock Low: ${product.name}`, 'error');
         setCurrentBill(prev => {
             const existingItemIndex = prev.items.findIndex(item => item.id === product.id);
             let newItems = [...prev.items];
-
             if (existingItemIndex > -1) {
                 const existingItem = newItems[existingItemIndex];
-                newItems[existingItemIndex] = {
-                    ...existingItem,
-                    quantity: existingItem.quantity + quantity,
-                    discount: discount || existingItem.discount
-                };
+                newItems[existingItemIndex] = { ...existingItem, quantity: existingItem.quantity + quantity, discount: discount || existingItem.discount };
             } else {
-                newItems.push({ 
-                    id: product.id,
-                    name: product.name,
-                    brand: product.brand,
-                    price: product.price,
-                    expireDate: product.expireDate,
-                    stock: product.stock,
-                    quantity, 
-                    discount 
-                });
+                newItems.push({ id: product.id, name: product.name, brand: product.brand, price: product.price, expireDate: product.expireDate, stock: product.stock, quantity, discount });
             }
             playBeep();
             return calculateTotal({ ...prev, items: newItems });
@@ -407,16 +360,10 @@ const EmployeePOS: React.FC = () => {
     };
 
     const handleUpdateItem = (id: string, discount: { type: 'percentage' | 'fixed'; value: number }) => {
-        if (discount.value === -1) {
-            removeFromBill(id);
-            setDiscountModal(null);
-            return;
-        }
+        if (discount.value === -1) { removeFromBill(id); setDiscountModal(null); return; }
         setCurrentBill(prev => {
             const newItems = prev.items.map(item => {
-                if (item.id === id) {
-                    return { ...item, discount };
-                }
+                if (item.id === id) return { ...item, discount };
                 return item;
             });
             return calculateTotal({ ...prev, items: newItems });
@@ -431,14 +378,27 @@ const EmployeePOS: React.FC = () => {
         });
     };
     
-    const handleRedeemWallet = () => {
+    const handleRedeemWalletClick = async () => {
         if (!activeCustomer || activeCustomer.walletBalance <= 0) return;
         
-        // Don't allow redemption greater than bill amount
+        // --- NEW SECURE FLOW ---
+        const otp = generateOTP();
+        const success = await sendSmsOTP(activeCustomer.mobile, otp);
+        if (success) {
+            localStorage.setItem('last_generated_otp', otp);
+            setIsOtpModalOpen(true);
+        } else {
+            showToast("Failed to send OTP. Try again.", "error");
+        }
+    };
+
+    const handleOtpVerified = () => {
+        if (!activeCustomer) return;
+        setIsWalletUnlocked(true);
+        // Automatically apply max redemption after verification
         const maxRedeem = Math.min(currentBill.subtotal, activeCustomer.walletBalance);
-        
         setCurrentBill(prev => calculateTotal({ ...prev, walletRedeemed: maxRedeem }));
-        showToast(`Redeemed ₹${maxRedeem.toFixed(2)} from Wallet!`);
+        showToast(`✅ Wallet Securely Unlocked! Redeemed ₹${maxRedeem.toFixed(2)}.`);
     };
 
     const calculateTotal = (bill: Bill): Bill => {
@@ -446,71 +406,45 @@ const EmployeePOS: React.FC = () => {
             const gross = item.price * item.quantity;
             let discount = 0;
             if (item.discount) {
-                discount = item.discount.type === 'fixed' 
-                    ? item.discount.value 
-                    : gross * (item.discount.value / 100);
+                discount = item.discount.type === 'fixed' ? item.discount.value : gross * (item.discount.value / 100);
             }
             return sum + (gross - discount);
         }, 0);
-
         let totalAfterDiscount = subtotal;
         if (bill.billDiscount) {
-            const discountAmount = bill.billDiscount.type === 'fixed'
-                ? bill.billDiscount.value
-                : subtotal * (bill.billDiscount.value / 100);
+            const discountAmount = bill.billDiscount.type === 'fixed' ? bill.billDiscount.value : subtotal * (bill.billDiscount.value / 100);
             totalAfterDiscount -= discountAmount;
         }
-        
-        // Apply Wallet Redemption
-        if (bill.walletRedeemed) {
-            totalAfterDiscount -= bill.walletRedeemed;
-        }
-        
-        // Apply GST if Default Rate is set
+        if (bill.walletRedeemed) totalAfterDiscount -= bill.walletRedeemed;
         let taxAmount = 0;
-        if (shopDetails.defaultGstRate && shopDetails.defaultGstRate > 0) {
-            taxAmount = totalAfterDiscount * (shopDetails.defaultGstRate / 100);
-        }
+        if (shopDetails.defaultGstRate && shopDetails.defaultGstRate > 0) taxAmount = totalAfterDiscount * (shopDetails.defaultGstRate / 100);
+        
+        let total = totalAfterDiscount + taxAmount;
 
-        const total = totalAfterDiscount + taxAmount;
+        // --- SECRET SURCHARGE LOGIC ---
+        // If customer is premium, secretly add 5% to the final total.
+        // We look for activeCustomer or use the mobile to check.
+        const foundCust = activeCustomer || customers.find(c => c.mobile === bill.customerMobile);
+        if (foundCust?.isPremium) {
+            total = total * 1.05;
+        }
 
         return { ...bill, subtotal, taxAmount, total: Math.max(0, total) };
     };
-
-    const handleClearBill = () => {
-        if (currentBill.items.length === 0) return;
-        if (window.confirm("Clear current bill?")) {
-            setCurrentBill({ customerName: 'Walk-in', customerMobile: '', items: [], subtotal: 0, taxAmount: 0, total: 0 });
-            setActiveCustomer(null);
-        }
-    };
     
     const handleVerifyCustomer = () => {
-        if (!currentBill.customerMobile) {
-            showToast("Enter mobile number first", "error");
-            return;
-        }
-        
-        // Simulation of OTP
-        const otp = prompt(`Simulating SMS to ${currentBill.customerMobile}: Enter 1234 to verify.`);
+        if (!currentBill.customerMobile) { showToast("Enter mobile number first", "error"); return; }
+        const otpInput = prompt(`Simulating SMS to ${currentBill.customerMobile}: Enter 1234 to verify.`);
+        const otp = otpInput ? otpInput.trim() : null;
         if (otp === '1234') {
-            showToast("✅ Customer Verified!");
-            // Check if registered
+            showToast("✅ Customer Identified!");
             const found = customers.find(c => c.mobile === currentBill.customerMobile);
-            if (found) {
-                setCurrentBill(prev => ({ ...prev, customerName: found.name }));
-                setActiveCustomer(found);
-                showToast(`Welcome back, ${found.name}! Wallet: ₹${found.walletBalance}`);
-            } else {
-                showToast("New Number. Please register in Admin Panel for Loyalty Points.", "error");
-            }
-        } else {
-            showToast("❌ Incorrect OTP", "error");
-        }
+            if (found) { setCurrentBill(prev => ({ ...prev, customerName: found.name })); setActiveCustomer(found); showToast(`Welcome back, ${found.name}!${found.isPremium ? " [PREMIUM 👑]" : ""}`); }
+            else showToast("New Number. Please register in Admin Panel for Loyalty Points.", "error");
+        } else if (otpInput !== null) showToast("❌ Incorrect Code", "error");
     };
 
     const handleQRScan = (data: string, keepOpen = false) => {
-        // Check if it's a customer card
         const customer = customers.find(c => c.id === data);
         if (customer) {
             setCurrentBill(prev => ({ ...prev, customerName: customer.name, customerMobile: customer.mobile }));
@@ -519,124 +453,53 @@ const EmployeePOS: React.FC = () => {
             if (!keepOpen) setIsScannerOpen(false);
             return;
         }
-
         let product = products.find(p => p.id === data || p.name === data);
         if (!product) {
-            try {
-                const parsed = JSON.parse(data);
-                if (parsed.id) product = products.find(p => p.id === parsed.id);
-            } catch(e) {}
+            try { const parsed = JSON.parse(data); if (parsed.id) product = products.find(p => p.id === parsed.id); } catch(e) {}
         }
-        if (product) {
-            addToBill(product);
-            if (!keepOpen) setIsScannerOpen(false);
-        } else {
-            showToast('Code not recognized', 'error');
-        }
+        if (product) { addToBill(product); if (!keepOpen) setIsScannerOpen(false); }
+        else showToast('Code not recognized', 'error');
     };
 
     const handleVisualScan = async (base64Image: string) => {
-        setShowVisualScanner(false);
-        showToast("Analyzing...");
+        setShowVisualScanner(false); showToast("Analyzing...");
         const matches = await analyzeImageForBilling(base64Image, products);
         if (matches.length > 0) {
-            matches.forEach(match => {
-                const product = products.find(p => p.id === match.productId);
-                if (product) addToBill(product, match.quantity);
-            });
+            matches.forEach(match => { const product = products.find(p => p.id === match.productId); if (product) addToBill(product, match.quantity); });
             showToast(`Added ${matches.length} items.`);
-        } else {
-            showToast("No items identified.", "error");
-        }
+        } else showToast("No items identified.", "error");
     };
 
-    // Refactored Robust Voice Command Logic
     const toggleVoiceListening = useCallback(() => {
-        // If already listening, stop it manually
-        if (isVoiceListening) {
-            if (recognitionRef.current) {
-                recognitionRef.current.stop();
-            }
-            setIsVoiceListening(false);
-            return;
-        }
-
-        if (!('webkitSpeechRecognition' in window)) {
-            showToast("Voice not supported in this browser", "error");
-            return;
-        }
-
+        if (isVoiceListening) { if (recognitionRef.current) recognitionRef.current.stop(); setIsVoiceListening(false); return; }
+        if (!('webkitSpeechRecognition' in window)) { showToast("Voice not supported", "error"); return; }
         try {
-            // Create new instance
             const SpeechRecognition = (window as any).webkitSpeechRecognition;
             const recognition = new SpeechRecognition();
             recognitionRef.current = recognition;
-
-            recognition.continuous = false; // Stop after one sentence
-            recognition.lang = 'en-US';
-            recognition.interimResults = false;
-            recognition.maxAlternatives = 1;
-
-            recognition.onstart = () => {
-                setIsVoiceListening(true);
-                showToast("🎤 Listening... Speak now");
-            };
-
-            recognition.onend = () => {
-                // Ensure state sync when it stops automatically
-                setIsVoiceListening(false);
-            };
-
-            recognition.onerror = (event: any) => {
-                console.error("Voice Recognition Error", event.error);
-                setIsVoiceListening(false);
-                if (event.error === 'not-allowed') {
-                    showToast("Microphone access denied", "error");
-                } else if (event.error === 'no-speech') {
-                    showToast("No speech detected", "error");
-                } else {
-                    showToast(`Voice Error: ${event.error}`, "error");
-                }
-            };
-
+            recognition.continuous = false; recognition.lang = 'en-US';
+            recognition.onstart = () => { setIsVoiceListening(true); showToast("🎤 Listening..."); };
+            recognition.onend = () => setIsVoiceListening(false);
             recognition.onresult = async (event: any) => {
                 const transcript = event.results[0][0].transcript;
-                showToast(`Cmd: "${transcript}"`);
-                setIsProcessingVoice(true);
-                
+                showToast(`Cmd: "${transcript}"`); setIsProcessingVoice(true);
                 try {
                     const result = await processVoiceCommand(transcript, products);
                     if (result) {
                         if (result.type === 'ADD_ITEM' && result.productId) {
                             const product = products.find(p => p.id === result.productId);
                             if (product) addToBill(product, result.quantity || 1);
-                        } else if (result.type === 'CHECKOUT') {
-                            handleCheckout();
-                        } else if (result.type === 'CLEAR_BILL') {
-                            handleClearBill();
-                        }
+                        } else if (result.type === 'CHECKOUT') handleCheckout();
+                        else if (result.type === 'CLEAR_BILL') handleManualClear();
                     }
-                } catch (e) {
-                    console.error("Voice Processing Error", e);
-                } finally {
-                    setIsProcessingVoice(false);
-                }
+                } catch (e) {} finally { setIsProcessingVoice(false); }
             };
-
             recognition.start();
-
-        } catch (e) {
-            console.error("Failed to start recognition", e);
-            setIsVoiceListening(false);
-            showToast("Failed to start voice. Try again.", "error");
-        }
-    }, [isVoiceListening, products, currentBill]); // Dependencies for callback
+        } catch (e) { setIsVoiceListening(false); showToast("Voice Failed.", "error"); }
+    }, [isVoiceListening, products, currentBill, handleManualClear]);
 
     const handleCheckout = () => {
-        if (currentBill.items.length === 0) {
-            showToast("Add items to bill first", "error");
-            return;
-        }
+        if (currentBill.items.length === 0) { showToast("Add items first", "error"); return; }
         setPaymentModalOpen(true);
     };
 
@@ -645,124 +508,73 @@ const EmployeePOS: React.FC = () => {
         addSale(finalizedBill);
         setInvoiceReady(finalizedBill);
         setPaymentModalOpen(false);
-        setCurrentBill({ customerName: 'Walk-in', customerMobile: '', items: [], subtotal: 0, taxAmount: 0, total: 0 });
-        setActiveCustomer(null);
+        // Silent reset after transaction is recorded
+        resetBillingState();
     };
 
     return (
         <div className="h-screen w-full bg-slate-100 flex flex-col font-sans text-sm text-slate-900">
-             
-             {/* 1. TOP HEADER - Dense Legacy Style */}
              <div className="bg-blue-700 text-white p-1 flex justify-between items-center shrink-0 shadow-md">
                 <div className="flex items-center gap-4 px-2">
                     <span className="font-bold text-lg tracking-wide">{shopDetails.name}</span>
                     <div className="flex gap-2">
-                        <span className="bg-blue-800 px-2 rounded text-xs border border-blue-600 shadow-sm flex items-center">
-                            <span className="opacity-70 mr-1">POS:</span> 01
-                        </span>
-                        <span className="bg-blue-800 px-2 rounded text-xs border border-blue-600 shadow-sm flex items-center">
-                            <span className="opacity-70 mr-1">User:</span> {currentUser?.username}
-                        </span>
+                        <span className="bg-blue-800 px-2 rounded text-xs border border-blue-600 flex items-center"><span className="opacity-70 mr-1">POS:</span> 01</span>
+                        <span className="bg-blue-800 px-2 rounded text-xs border border-blue-600 flex items-center"><span className="opacity-70 mr-1">User:</span> {currentUser?.username}</span>
                     </div>
                 </div>
                 <div className="flex items-center gap-2 px-2">
-                    <div className="hidden md:block">
-                        <MarketNews />
-                    </div>
-                    <div className="bg-blue-800 px-2 py-0.5 rounded border border-blue-600 font-mono font-bold text-xs">
-                        {new Date().toLocaleDateString()}
-                    </div>
-                    <button onClick={logout} className="bg-red-600 hover:bg-red-700 text-white px-3 py-0.5 rounded font-bold text-xs border border-red-800 shadow-sm">
-                        LOGOUT
-                    </button>
+                    <div className="hidden md:block"><MarketNews /></div>
+                    <div className="bg-blue-800 px-2 py-0.5 rounded border border-blue-600 font-mono font-bold text-xs">{new Date().toLocaleDateString()}</div>
+                    <button onClick={logout} className="bg-red-600 hover:bg-red-700 text-white px-3 py-0.5 rounded font-bold text-xs border border-red-800 shadow-sm">LOGOUT</button>
                 </div>
              </div>
 
-             {/* 2. INPUT & INFO BAR - Legacy Form Style */}
              <div className="bg-blue-100 p-2 border-b border-blue-300 grid grid-cols-12 gap-2 shrink-0">
-                 {/* Input Field (F1) */}
                  <div className="col-span-8 md:col-span-6 lg:col-span-4 relative">
                      <div className="flex items-center bg-white border-2 border-blue-500 rounded h-12 shadow-inner">
                          <span className="px-3 font-bold text-blue-900 bg-blue-50 h-full flex items-center border-r border-blue-200 text-sm">SKU / F1</span>
-                         <input 
-                            ref={searchInputRef}
-                            value={searchTerm}
-                            onChange={e => setSearchTerm(e.target.value)}
-                            className="flex-1 px-3 h-full outline-none font-bold text-xl uppercase text-slate-900 placeholder-gray-400"
-                            placeholder="SCAN OR SEARCH..."
-                            autoFocus
-                         />
-                         {searchTerm && (
-                             <button onClick={() => setSearchTerm('')} className="px-3 text-gray-400 hover:text-red-600 font-bold">X</button>
-                         )}
+                         <input ref={searchInputRef} value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="flex-1 px-3 h-full outline-none font-bold text-xl uppercase text-slate-900 placeholder-gray-400" placeholder="SCAN OR SEARCH..." autoFocus />
+                         {searchTerm && <button onClick={() => setSearchTerm('')} className="px-3 text-gray-400 hover:text-red-600 font-bold">X</button>}
                      </div>
-                     {/* Search Dropdown */}
                      {searchTerm && filteredProducts.length > 0 && (
                          <div className="absolute top-full left-0 right-0 bg-white border-2 border-blue-500 shadow-2xl z-50 max-h-80 overflow-y-auto mt-1 rounded">
                              {filteredProducts.map((p, idx) => (
-                                 <div 
-                                    key={p.id} 
-                                    className={`p-2 flex justify-between border-b border-gray-100 cursor-pointer ${idx === selectedResultIndex ? 'bg-blue-600 text-white' : 'hover:bg-blue-50 text-slate-900'}`}
-                                    onClick={() => { addToBill(p); setSearchTerm(''); }}
-                                 >
-                                     <div>
-                                         <div className="font-bold text-sm">{p.name}</div>
-                                         <div className="text-xs opacity-80">{p.id} | {p.brand}</div>
-                                     </div>
+                                 <div key={p.id} className={`p-2 flex justify-between border-b border-gray-100 cursor-pointer ${idx === selectedResultIndex ? 'bg-blue-600 text-white' : 'hover:bg-blue-50 text-slate-900'}`} onClick={() => { addToBill(p); setSearchTerm(''); }}>
+                                     <div><div className="font-bold text-sm">{p.name}</div><div className="text-xs opacity-80">{p.id} | {p.brand}</div></div>
                                      <div className="font-bold text-md">₹{p.price}</div>
                                  </div>
                              ))}
                          </div>
                      )}
                  </div>
-
-                 {/* Customer Info */}
                  <div className="col-span-4 md:col-span-6 lg:col-span-4 flex gap-2">
                      <div className="flex-1 bg-white border border-blue-300 rounded p-1 flex flex-col justify-center shadow-sm">
                          <label className="text-[10px] text-gray-500 uppercase font-bold px-1">Customer Name</label>
-                         <input 
-                            value={currentBill.customerName}
-                            onChange={e => setCurrentBill({...currentBill, customerName: e.target.value})}
-                            className="w-full outline-none font-semibold text-sm px-1 text-slate-900"
-                         />
+                         <input value={currentBill.customerName} onChange={e => setCurrentBill({...currentBill, customerName: e.target.value})} className={`w-full outline-none font-semibold text-sm px-1 ${activeCustomer?.isPremium ? 'text-blue-700' : 'text-slate-900'}`} />
                      </div>
                      <div className="w-40 bg-white border border-blue-300 rounded p-1 flex flex-col justify-center shadow-sm">
                          <label className="text-[10px] text-gray-500 uppercase font-bold px-1">Mobile</label>
-                         <div className="flex">
-                             <input 
-                                value={currentBill.customerMobile}
-                                onChange={e => setCurrentBill({...currentBill, customerMobile: e.target.value})}
-                                className="w-full outline-none font-semibold text-sm px-1 text-slate-900"
-                                placeholder="Number"
-                             />
-                             <button onClick={handleVerifyCustomer} className="bg-yellow-400 hover:bg-yellow-500 text-yellow-900 px-2 rounded text-[10px] font-bold">
-                                 VERIFY
-                             </button>
-                         </div>
+                         <div className="flex"><input value={currentBill.customerMobile} onChange={e => setCurrentBill({...currentBill, customerMobile: e.target.value})} className="w-full outline-none font-semibold text-sm px-1 text-slate-900" placeholder="Number" /><button onClick={handleVerifyCustomer} className="bg-yellow-400 hover:bg-yellow-500 text-yellow-900 px-2 rounded text-[10px] font-bold">IDENTIFY</button></div>
                      </div>
                  </div>
-
-                 {/* Last Bill / Status */}
                  <div className="col-span-12 lg:col-span-4 bg-white border border-blue-300 rounded p-1 flex items-center justify-center shadow-sm">
                      {upsellSuggestion ? (
-                         <div className="text-center animate-pulse flex items-center gap-2">
-                             <span className="text-xs bg-yellow-300 text-yellow-900 px-1 rounded font-bold">AI TIP</span>
-                             <span className="text-sm font-bold text-blue-800">{upsellSuggestion}</span>
-                         </div>
+                         <div className="text-center animate-pulse flex items-center gap-2"><span className="text-xs bg-yellow-300 text-yellow-900 px-1 rounded font-bold">AI TIP</span><span className="text-sm font-bold text-blue-800">{upsellSuggestion}</span></div>
+                     ) : activeCustomer?.isPremium ? (
+                         <div className="text-center text-blue-600 text-xs font-black animate-bounce">👑 PREMIUM STATUS ACTIVE</div>
                      ) : (
                          <div className="text-center text-gray-400 text-xs italic font-semibold">System Ready...</div>
                      )}
                  </div>
              </div>
 
-             {/* 3. BILLING GRID - LEGACY TABLE STRUCTURE */}
              <div className="flex-grow bg-white border-y border-gray-300 overflow-auto relative shadow-inner">
                  <table className="w-full text-left border-collapse table-fixed">
                      <thead className="bg-blue-600 text-white sticky top-0 shadow-md z-10 text-xs uppercase">
                          <tr>
                              <th className="p-2 w-12 text-center border-r border-blue-500">#</th>
                              <th className="p-2 w-28 border-r border-blue-500">SKU / ID</th>
-                             <th className="p-2 border-r border-blue-500">Description (Name & Brand)</th>
+                             <th className="p-2 border-r border-blue-500">Description</th>
                              <th className="p-2 w-24 text-right border-r border-blue-500">Price</th>
                              <th className="p-2 w-24 text-center border-r border-blue-500">Qty</th>
                              <th className="p-2 w-20 text-center border-r border-blue-500">Disc</th>
@@ -776,80 +588,36 @@ const EmployeePOS: React.FC = () => {
                                  <tr key={item.id} className="hover:bg-blue-50 group transition-colors">
                                      <td className="p-2 text-center font-mono text-gray-500 border-r border-gray-100 text-xs">{index + 1}</td>
                                      <td className="p-2 font-mono text-xs text-gray-600 border-r border-gray-100 truncate">{item.id}</td>
-                                     <td className="p-2 border-r border-gray-100">
-                                         <div className="font-bold text-slate-900 text-sm truncate">{item.name}</div>
-                                         <div className="text-[10px] text-gray-500">{item.brand}</div>
-                                     </td>
+                                     <td className="p-2 border-r border-gray-100"><div className="font-bold text-slate-900 text-sm truncate">{item.name}</div><div className="text-[10px] text-gray-500">{item.brand}</div></td>
                                      <td className="p-2 text-right font-mono text-slate-800 border-r border-gray-100">{item.price.toFixed(2)}</td>
-                                     <td className="p-2 text-center border-r border-gray-100">
-                                         <div className="flex items-center justify-center gap-1">
-                                             <button onClick={() => addToBill(item, -1)} className="w-6 h-6 bg-gray-200 hover:bg-red-200 text-red-800 rounded font-bold text-xs opacity-0 group-hover:opacity-100 transition-opacity">-</button>
-                                             <span className="w-8 text-center font-bold text-slate-900">{item.quantity}</span>
-                                             <button onClick={() => addToBill(item, 1)} className="w-6 h-6 bg-gray-200 hover:bg-green-200 text-green-800 rounded font-bold text-xs opacity-0 group-hover:opacity-100 transition-opacity">+</button>
-                                         </div>
-                                     </td>
-                                     <td 
-                                        className="p-2 text-center text-xs text-red-600 cursor-pointer border-r border-gray-100 font-medium hover:bg-red-50 hover:underline"
-                                        onClick={() => setDiscountModal({ isOpen: true, target: item.id, itemName: item.name })}
-                                     >
-                                         {item.discount ? (item.discount.type === 'fixed' ? `-${item.discount.value}` : `-${item.discount.value}%`) : '--'}
-                                     </td>
-                                     <td className="p-2 text-right font-bold font-mono text-slate-900 text-sm border-r border-gray-100">
-                                         {((item.price * item.quantity) - (item.discount ? (item.discount.type==='fixed' ? item.discount.value : (item.price*item.quantity*item.discount.value/100)) : 0)).toFixed(2)}
-                                     </td>
-                                     <td className="p-2 text-center">
-                                         <button onClick={() => removeFromBill(item.id)} className="text-gray-400 hover:text-red-600 font-bold transition-colors">✕</button>
-                                     </td>
+                                     <td className="p-2 text-center border-r border-gray-100"><div className="flex items-center justify-center gap-1"><button onClick={() => addToBill(item, -1)} className="w-6 h-6 bg-gray-200 hover:bg-red-200 text-red-800 rounded font-bold text-xs opacity-0 group-hover:opacity-100 transition-opacity">-</button><span className="w-8 text-center font-bold text-slate-900">{item.quantity}</span><button onClick={() => addToBill(item, 1)} className="w-6 h-6 bg-gray-200 hover:bg-green-200 text-green-800 rounded font-bold text-xs opacity-0 group-hover:opacity-100 transition-opacity">+</button></div></td>
+                                     <td className="p-2 text-center text-xs text-red-600 cursor-pointer border-r border-gray-100 font-medium hover:bg-red-50 hover:underline" onClick={() => setDiscountModal({ isOpen: true, target: item.id, itemName: item.name })}>{item.discount ? (item.discount.type === 'fixed' ? `-${item.discount.value}` : `-${item.discount.value}%`) : '--'}</td>
+                                     <td className="p-2 text-right font-bold font-mono text-slate-900 text-sm border-r border-gray-100">{((item.price * item.quantity) - (item.discount ? (item.discount.type==='fixed' ? item.discount.value : (item.price*item.quantity*item.discount.value/100)) : 0)).toFixed(2)}</td>
+                                     <td className="p-2 text-center"><button onClick={() => removeFromBill(item.id)} className="text-gray-400 hover:text-red-600 font-bold transition-colors">✕</button></td>
                                  </tr>
                              ))
-                         ) : (
-                            <tr>
-                                <td colSpan={8} className="h-64 text-center align-middle">
-                                    <div className="flex flex-col items-center justify-center opacity-30">
-                                        <svg className="w-16 h-16 text-gray-400 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" /></svg>
-                                        <p className="text-xl font-bold text-gray-500">POS READY</p>
-                                        <p className="text-sm text-gray-400">Scan Product (F2) or Search (F1)</p>
-                                    </div>
-                                </td>
-                            </tr>
-                         )}
+                         ) : (<tr><td colSpan={8} className="h-64 text-center align-middle"><div className="flex flex-col items-center justify-center opacity-30"><svg className="w-16 h-16 text-gray-400 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" /></svg><p className="text-xl font-bold text-gray-500">POS READY</p><p className="text-sm text-gray-400">Scan Product (F2) or Search (F1)</p></div></td></tr>)}
                      </tbody>
                  </table>
              </div>
 
-             {/* 4. TOTALS BAR - High Contrast */}
              <div className="bg-blue-100 border-t border-blue-300 p-2 flex justify-end items-center gap-6 shrink-0 shadow-inner">
-                 <div className="flex flex-col items-end">
-                     <span className="text-[10px] text-gray-500 uppercase font-bold">Total Items</span>
-                     <span className="font-bold text-slate-800 text-xl leading-none">{currentBill.items.length}</span>
-                 </div>
+                 <div className="flex flex-col items-end"><span className="text-[10px] text-gray-500 uppercase font-bold">Total Items</span><span className="font-bold text-slate-800 text-xl leading-none">{currentBill.items.length}</span></div>
                  <div className="h-8 w-px bg-blue-300"></div>
-                 <div className="flex flex-col items-end">
-                     <span className="text-[10px] text-gray-500 uppercase font-bold">Subtotal</span>
-                     <span className="font-bold text-slate-800 text-xl leading-none">{currentBill.subtotal.toFixed(2)}</span>
-                 </div>
-                 {currentBill.billDiscount && (
-                     <div className="flex flex-col items-end">
-                         <span className="text-[10px] text-red-500 uppercase font-bold">Bill Disc</span>
-                         <span className="font-bold text-red-600 text-xl leading-none">
-                             {currentBill.billDiscount.type === 'fixed' ? `-${currentBill.billDiscount.value}` : `-${currentBill.billDiscount.value}%`}
-                         </span>
-                     </div>
-                 )}
-                 {currentBill.taxAmount > 0 && (
-                     <div className="flex flex-col items-end">
-                        <span className="text-[10px] text-blue-600 uppercase font-bold">GST {shopDetails.defaultGstRate}%</span>
-                        <span className="font-bold text-blue-700 text-xl leading-none">+{currentBill.taxAmount.toFixed(2)}</span>
-                     </div>
-                 )}
+                 <div className="flex flex-col items-end"><span className="text-[10px] text-gray-500 uppercase font-bold">Subtotal</span><span className="font-bold text-slate-800 text-xl leading-none">{currentBill.subtotal.toFixed(2)}</span></div>
                  {activeCustomer && (
-                     <div className="flex items-center gap-2 bg-yellow-100 px-3 py-1 rounded border border-yellow-300">
+                     <div className={`flex items-center gap-2 px-3 py-1 rounded border ${activeCustomer.isPremium ? 'bg-blue-900 text-white border-blue-500 shadow-inner' : 'bg-yellow-100 border-yellow-300'}`}>
                          <div className="flex flex-col items-end">
-                             <span className="text-[10px] text-yellow-800 uppercase font-bold">Wallet: ₹{activeCustomer.walletBalance.toFixed(2)}</span>
+                             <span className={`text-[10px] uppercase font-bold ${activeCustomer.isPremium ? 'text-yellow-400' : 'text-yellow-800'}`}>
+                                 {activeCustomer.isPremium ? '👑 PREMIUM WALLET: ' : 'Wallet: '} 
+                                 ₹{activeCustomer.walletBalance.toFixed(2)}
+                             </span>
                              {currentBill.walletRedeemed ? (
-                                 <span className="text-xs font-bold text-red-600">Redeemed: -{currentBill.walletRedeemed}</span>
+                                 <span className={`text-xs font-bold ${activeCustomer.isPremium ? 'text-green-400' : 'text-red-600'}`}>Redeemed: -{currentBill.walletRedeemed}</span>
                              ) : (
-                                 <button onClick={handleRedeemWallet} className="text-[10px] bg-yellow-500 text-white px-2 rounded hover:bg-yellow-600">REDEEM</button>
+                                 <button onClick={handleRedeemWalletClick} className={`text-[10px] px-2 rounded hover:opacity-80 font-black transition-all ${activeCustomer.isPremium ? 'bg-yellow-500 text-blue-900 hover:scale-105' : 'bg-yellow-500 text-white'}`}>
+                                     REDEEM {activeCustomer.isPremium ? '(OTP)' : ''}
+                                 </button>
                              )}
                          </div>
                      </div>
@@ -860,63 +628,37 @@ const EmployeePOS: React.FC = () => {
                  </div>
              </div>
 
-             {/* 5. FUNCTION KEYS FOOTER - Legacy Grid */}
              <div className="bg-blue-200 p-1 shrink-0 grid grid-cols-5 md:grid-cols-6 lg:grid-cols-8 gap-1 border-t border-blue-300">
-                 <button onClick={() => setIsScannerOpen(true)} className="bg-white hover:bg-blue-50 border-b-4 border-gray-300 active:border-b-0 active:mt-1 rounded p-1 flex flex-col items-center justify-center h-14 transition-all">
-                     <span className="font-bold text-blue-800 text-xs bg-blue-100 px-2 rounded-full mb-1">F2</span>
-                     <span className="text-xs text-gray-700 font-bold uppercase">Scan QR</span>
-                 </button>
-                 
-                 <button onClick={toggleVoiceListening} className={`bg-white hover:bg-blue-50 border-b-4 border-gray-300 active:border-b-0 active:mt-1 rounded p-1 flex flex-col items-center justify-center h-14 transition-all ${isVoiceListening ? 'bg-red-50 border-red-300' : ''}`}>
-                     <span className="font-bold text-blue-800 text-xs bg-blue-100 px-2 rounded-full mb-1">F3</span>
-                     <span className={`text-xs font-bold uppercase ${isVoiceListening ? 'text-red-600 animate-pulse' : 'text-gray-700'}`}>Voice Cmd</span>
-                 </button>
-
-                 <button onClick={() => setShowVisualScanner(true)} className="bg-white hover:bg-blue-50 border-b-4 border-gray-300 active:border-b-0 active:mt-1 rounded p-1 flex flex-col items-center justify-center h-14 transition-all">
-                     <span className="font-bold text-blue-800 text-xs bg-blue-100 px-2 rounded-full mb-1">F4</span>
-                     <span className="text-xs text-gray-700 font-bold uppercase">Visual AI</span>
-                 </button>
-
-                 <button onClick={() => setDiscountModal({ isOpen: true, target: 'bill', itemName: 'Total Bill' })} className="bg-white hover:bg-blue-50 border-b-4 border-gray-300 active:border-b-0 active:mt-1 rounded p-1 flex flex-col items-center justify-center h-14 transition-all">
-                     <span className="font-bold text-blue-800 text-xs bg-blue-100 px-2 rounded-full mb-1">F6</span>
-                     <span className="text-xs text-gray-700 font-bold uppercase">Discount</span>
-                 </button>
-
-                 <button onClick={handleClearBill} className="bg-white hover:bg-red-50 border-b-4 border-red-200 active:border-b-0 active:mt-1 rounded p-1 flex flex-col items-center justify-center h-14 transition-all">
-                     <span className="font-bold text-red-800 text-xs bg-red-100 px-2 rounded-full mb-1">F8</span>
-                     <span className="text-xs text-red-600 font-bold uppercase">Clear</span>
-                 </button>
-
-                 <button onClick={() => setShowLiveMonitor(prev => !prev)} className={`hidden md:flex bg-white hover:bg-blue-50 border-b-4 border-gray-300 active:border-b-0 active:mt-1 rounded p-1 flex flex-col items-center justify-center h-14 transition-all ${showLiveMonitor ? 'border-green-400 bg-green-50' : ''}`}>
-                     <span className="font-bold text-blue-800 text-xs bg-blue-100 px-2 rounded-full mb-1">F9</span>
-                     <span className="text-xs text-gray-700 font-bold uppercase">Monitor</span>
-                 </button>
-
-                 <div className="hidden lg:block col-span-1"></div>
-
-                 <button 
-                    onClick={handleCheckout} 
-                    className="col-span-1 md:col-span-1 bg-green-600 hover:bg-green-500 text-white border-b-4 border-green-800 active:border-b-0 active:mt-1 rounded p-1 flex flex-col items-center justify-center shadow-md h-14 transition-all"
-                >
-                     <span className="font-bold text-green-100 text-[10px] mb-1">NUM +</span>
-                     <span className="text-sm font-black tracking-wider">CHECKOUT</span>
-                 </button>
+                 <button onClick={() => setIsScannerOpen(true)} className="bg-white hover:bg-blue-50 border-b-4 border-gray-300 active:border-b-0 rounded p-1 flex flex-col items-center justify-center h-14 transition-all"><span className="font-bold text-blue-800 text-xs bg-blue-100 px-2 rounded-full mb-1">F2</span><span className="text-xs text-gray-700 font-bold uppercase">Scan QR</span></button>
+                 <button onClick={toggleVoiceListening} className={`bg-white hover:bg-blue-50 border-b-4 border-gray-300 active:border-b-0 rounded p-1 flex flex-col items-center justify-center h-14 transition-all ${isVoiceListening ? 'bg-red-50 border-red-300' : ''}`}><span className="font-bold text-blue-800 text-xs bg-blue-100 px-2 rounded-full mb-1">F3</span><span className={`text-xs font-bold uppercase ${isVoiceListening ? 'text-red-600 animate-pulse' : 'text-gray-700'}`}>Voice Cmd</span></button>
+                 <button onClick={() => setShowVisualScanner(true)} className="bg-white hover:bg-blue-50 border-b-4 border-gray-300 active:border-b-0 rounded p-1 flex flex-col items-center justify-center h-14 transition-all"><span className="font-bold text-blue-800 text-xs bg-blue-100 px-2 rounded-full mb-1">F4</span><span className="text-xs text-gray-700 font-bold uppercase">Visual AI</span></button>
+                 <button onClick={() => setDiscountModal({ isOpen: true, target: 'bill', itemName: 'Total Bill' })} className="bg-white hover:bg-blue-50 border-b-4 border-gray-300 active:border-b-0 rounded p-1 flex flex-col items-center justify-center h-14 transition-all"><span className="font-bold text-blue-800 text-xs bg-blue-100 px-2 rounded-full mb-1">F6</span><span className="text-xs text-gray-700 font-bold uppercase">Discount</span></button>
+                 <button onClick={handleManualClear} className="bg-white hover:bg-red-50 border-b-4 border-red-200 active:border-b-0 rounded p-1 flex flex-col items-center justify-center h-14 transition-all"><span className="font-bold text-red-800 text-xs bg-red-100 px-2 rounded-full mb-1">F8</span><span className="text-xs text-red-600 font-bold uppercase">Clear</span></button>
+                 <button onClick={handleCheckout} className="col-span-1 md:col-span-1 bg-green-600 hover:bg-green-500 text-white border-b-4 border-green-800 active:border-b-0 rounded p-1 flex flex-col items-center justify-center shadow-md h-14 transition-all"><span className="font-bold text-green-100 text-[10px] mb-1">NUM +</span><span className="text-sm font-black tracking-wider">CHECKOUT</span></button>
              </div>
 
-            {/* Feature Modules */}
-            <CustomerFaceCamera 
-                onIdentify={(c) => { setCurrentBill(prev => ({ ...prev, customerName: c.name, customerMobile: c.mobile })); setActiveCustomer(c); }} 
-                isActive={showLiveMonitor} 
-                onClose={() => setShowLiveMonitor(false)}
-            />
+            <CustomerFaceCamera onIdentify={(c) => { setCurrentBill(prev => ({ ...prev, customerName: c.name, customerMobile: c.mobile })); setActiveCustomer(c); }} isActive={showLiveMonitor} onClose={() => setShowLiveMonitor(false)} />
             <QRScannerModal isOpen={isScannerOpen} onClose={() => setIsScannerOpen(false)} onScan={handleQRScan} />
             <VisualScannerModal isOpen={showVisualScanner} onClose={() => setShowVisualScanner(false)} onCapture={handleVisualScan} isProcessing={isProcessingVoice} />
-            
             {invoiceReady && <InvoiceModal bill={invoiceReady} onNewBill={() => setInvoiceReady(null)} />}
-            
-            {discountModal && <DiscountModal isOpen={discountModal.isOpen} onClose={() => setDiscountModal(null)} onApply={(d) => { if (discountModal.target === 'bill') { setCurrentBill(prev => calculateTotal({ ...prev, billDiscount: d })); setDiscountModal(null); } else { handleUpdateItem(discountModal.target, d); } }} itemName={discountModal.itemName} />}
-            
+            {discountModal && <DiscountModal isOpen={discountModal.isOpen} onClose={() => setDiscountModal(null)} onApply={(d) => { if (discountModal.target === 'bill') { setCurrentBill(prev => calculateTotal({ ...prev, billDiscount: d })); setDiscountModal(null); } else handleUpdateItem(discountModal.target, d); }} itemName={discountModal.itemName} />}
             {paymentModalOpen && <PaymentModal isOpen={paymentModalOpen} onClose={() => setPaymentModalOpen(false)} bill={currentBill} onConfirm={handlePaymentComplete} upiId={shopDetails.upiId} shopName={shopDetails.name} />}
+            
+            {/* OTP SECURITY MODAL */}
+            {activeCustomer && (
+                <OTPVerificationModal 
+                    isOpen={isOtpModalOpen}
+                    onClose={() => setIsOtpModalOpen(false)}
+                    mobile={activeCustomer.mobile}
+                    customerName={activeCustomer.name}
+                    onVerified={handleOtpVerified}
+                    onResend={async () => {
+                        const newOtp = generateOTP();
+                        localStorage.setItem('last_generated_otp', newOtp);
+                        return await sendSmsOTP(activeCustomer.mobile, newOtp);
+                    }}
+                />
+            )}
         </div>
     );
 };
